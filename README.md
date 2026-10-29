@@ -1,6 +1,6 @@
 # Knowing When to Ask a Human: Banking Intent Classification with Calibrated Handoff
 
-ES 335 · Machine Learning 2026 course project. See [PRD.md](PRD.md) for the full plan.
+ES 335 · Machine Learning 2026 course project. Hypotheses, split rules, and decision criteria are pre-registered in [PREREGISTRATION.md](PREREGISTRATION.md).
 
 - **Live site:** _TBD (GitHub Pages, served from `/docs`)_
 - **Data:** BANKING77 (Casanueva et al., 2020, arXiv:2003.04807), CC BY 4.0, downloaded from

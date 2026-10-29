@@ -8,3 +8,14 @@ __pycache__/
 # Raw data is downloaded by src/download_data.py, not committed
 data/raw/*
 !data/raw/.gitkeep
+
+# Private notes (ideation chats, course handout images). Kept local only.
+notes/
+
+# Personal planning docs. Kept local only.
+PRD.md
+CLAUDE.md
+
+# Secrets. Never commit.
+.env
+.env.*
