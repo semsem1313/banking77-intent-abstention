@@ -37,6 +37,7 @@ python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt
 .venv/Scripts/python -m src.download_data
 .venv/Scripts/python -m src.split            # ~20 s
+.venv/Scripts/python -m src.baselines        # ~2.5 min (bootstrap CIs)
 .venv/Scripts/python -m src.tune             # (in progress)
 .venv/Scripts/python -m src.evaluate_final   # run once, on frozen models
 .venv/Scripts/python -m src.export_web
@@ -48,8 +49,21 @@ python -m venv .venv
 | Step | State |
 |---|---|
 | Pre-registration, data download, split, tests | Done |
-| Baselines, main model, OOF predictions | Next |
+| Baselines (B0 majority, B1 keyword rule, B2 random abstention) | Done |
+| Main model (TF-IDF + logistic regression), OOF predictions | Next |
 | Hypothesis analyses, final test run, website | To do |
+
+## Baseline results (out-of-fold, 9,999 training messages)
+
+Each message is predicted by a model fit on the other four folds. Brackets show 95% bootstrap CIs. B2 (random abstention) is applied to the main model's predictions in the H2 analysis.
+
+| Baseline | Accuracy | Macro-F1 |
+|---|---|---|
+| B0: always predict the majority intent | 0.019 [0.016, 0.021] | 0.001 [0.000, 0.001] |
+| B1: keyword rule, 10 keywords per intent (primary) | 0.568 [0.558, 0.577] | 0.550 [0.540, 0.558] |
+| B1: keyword rule, 20 keywords per intent (strongest) | 0.649 [0.638, 0.658] | 0.629 [0.618, 0.637] |
+
+Models are compared against the strongest baseline.
 
 ## AI-use disclosure
 
