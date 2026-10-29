@@ -1,0 +1,7 @@
+# Pin exact versions after the first successful install (pip freeze).
+numpy
+pandas
+scikit-learn
+matplotlib
+jupyter
+pytest
