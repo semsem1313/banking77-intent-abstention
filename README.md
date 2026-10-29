@@ -11,7 +11,7 @@ ES 335 · Machine Learning 2026 course project.
 
 An exploratory test also asks whether the model can reject intents it never saw in training.
 
-The hypotheses, split rules, and decision criteria were pre-registered in [PREREGISTRATION.md](PREREGISTRATION.md) before any model was trained. A step-by-step record of what was done and why is in [PROJECT_JOURNAL.md](PROJECT_JOURNAL.md).
+The hypotheses, split rules, and decision criteria were pre-registered in [PREREGISTRATION.md](PREREGISTRATION.md) before any model was trained.
 
 - **Live site:** https://semsem1313.github.io/banking77-intent-abstention/ (in progress)
 - **Data:** BANKING77 (Casanueva et al., 2020, arXiv:2003.04807), CC BY 4.0. It's downloaded from [PolyAI-LDN/task-specific-datasets](https://github.com/PolyAI-LDN/task-specific-datasets) at a pinned commit, with SHA-256 checks. There are 10,003 training and 3,080 test messages across 77 intents.

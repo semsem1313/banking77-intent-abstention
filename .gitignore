@@ -15,6 +15,7 @@ notes/
 # Personal planning docs. Kept local only.
 PRD.md
 CLAUDE.md
+PROJECT_JOURNAL.md
 
 # Secrets. Never commit.
 .env
