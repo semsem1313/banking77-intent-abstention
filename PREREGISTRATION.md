@@ -61,4 +61,10 @@ A hypothesis that turns out false is reported as a finding. The criteria above a
 
 ## Amendments
 
-_None yet._
+### 2026-10-29: near-duplicate sensitivity check (added before any model was trained)
+
+- **What:** an extra set of near-duplicate groups at cosine ≥ **0.80** (`group_sens`, `fold_sens`), alongside the pre-registered 0.90 groups.
+- **Planned use:** the main model's CV macro-F1 will be reported under both fold assignments.
+- **Why:** inspecting the training data showed pairs at 0.898–0.899 that differ by a single word ("top-up" vs "top-ups"). That means 0.90 may under-group.
+- **What doesn't change:** the 0.90 rule stays the primary split. No other rule changes.
+- **Timing:** no model had been fit or scored when this was added.

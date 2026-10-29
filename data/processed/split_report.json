@@ -1,0 +1,75 @@
+{
+  "raw_rows": 10003,
+  "exact_duplicates_removed": 4,
+  "duplicate_texts_with_conflicting_labels": 0,
+  "rows_after_dedup": 9999,
+  "n_intents": 77,
+  "examples_per_intent": {
+    "min": 35,
+    "median": 127,
+    "max": 187
+  },
+  "near_duplicate_threshold": 0.9,
+  "near_duplicate_pairs": 153,
+  "near_duplicate_pairs_with_different_labels": [
+    {
+      "cosine": 0.927,
+      "text_a": "what is this $1 charge on my account?",
+      "label_a": "extra_charge_on_statement",
+      "text_b": "what is this charge on my card?",
+      "label_b": "direct_debit_payment_not_recognised"
+    },
+    {
+      "cosine": 0.906,
+      "text_a": "how can i get new card?",
+      "label_a": "contactless_not_working",
+      "text_b": "can i get a new card?",
+      "label_b": "order_physical_card"
+    },
+    {
+      "cosine": 1.0,
+      "text_a": "has my top up gone through?",
+      "label_a": "pending_top_up",
+      "text_b": "has my top-up gone through?",
+      "label_b": "top_up_reverted"
+    },
+    {
+      "cosine": 0.92,
+      "text_a": "i transferred some money but it hasn't arrived.",
+      "label_a": "transfer_not_received_by_recipient",
+      "text_b": "i transferred some money but it hasn't arrived yet",
+      "label_b": "balance_not_updated_after_bank_transfer"
+    }
+  ],
+  "n_groups": 9854,
+  "rows_in_multi_message_groups": 275,
+  "largest_group": 4,
+  "sensitivity": {
+    "threshold": 0.8,
+    "near_duplicate_pairs": 590,
+    "near_duplicate_pairs_with_different_labels": 39,
+    "n_groups": 9474,
+    "largest_group": 7
+  },
+  "fold_sizes": {
+    "0": 1999,
+    "1": 2000,
+    "2": 2000,
+    "3": 2000,
+    "4": 2000
+  },
+  "min_examples_of_any_intent_in_any_fold": 7,
+  "unseen_intents": [
+    "activate_my_card",
+    "automatic_top_up",
+    "card_arrival",
+    "declined_card_payment",
+    "declined_cash_withdrawal",
+    "exchange_via_app",
+    "passcode_forgotten",
+    "pending_top_up",
+    "top_up_by_card_charge",
+    "wrong_exchange_rate_for_cash_withdrawal"
+  ],
+  "unseen_rows": 1414
+}

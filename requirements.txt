@@ -1,7 +1,8 @@
-# Pin exact versions after the first successful install (pip freeze).
-numpy
-pandas
-scikit-learn
-matplotlib
-jupyter
-pytest
+# Tested on Python 3.14.0 (Windows).
+numpy==2.5.4
+pandas==3.1.0
+scipy==1.18.1
+scikit-learn==1.9.1
+matplotlib==3.11.2
+jupyter==1.1.1
+pytest==9.2.0

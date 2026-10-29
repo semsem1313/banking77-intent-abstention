@@ -1,0 +1,12 @@
+[
+  "activate_my_card",
+  "automatic_top_up",
+  "card_arrival",
+  "declined_card_payment",
+  "declined_cash_withdrawal",
+  "exchange_via_app",
+  "passcode_forgotten",
+  "pending_top_up",
+  "top_up_by_card_charge",
+  "wrong_exchange_rate_for_cash_withdrawal"
+]
