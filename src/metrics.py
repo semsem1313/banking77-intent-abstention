@@ -27,6 +27,23 @@ def bootstrap_ci(y_true, y_pred, metric, n_resamples=N_BOOTSTRAP, seed=SEED, alp
     return float(lo), float(hi)
 
 
+def paired_bootstrap_diff(y_true, pred_a, pred_b, metric, n_resamples=N_BOOTSTRAP, seed=SEED):
+    """Difference metric(A) - metric(B) on the same messages, with a 95% CI.
+
+    "Paired" means both models are scored on the same resample each time. That cancels
+    out the luck of which messages were drawn, so the CI is about the models alone.
+    """
+    y_true, pred_a, pred_b = map(np.asarray, (y_true, pred_a, pred_b))
+    rng = np.random.default_rng(seed)
+    n = len(y_true)
+    diffs = []
+    for _ in range(n_resamples):
+        idx = rng.integers(0, n, n)
+        diffs.append(metric(y_true[idx], pred_a[idx]) - metric(y_true[idx], pred_b[idx]))
+    lo, hi = np.quantile(diffs, [0.025, 0.975])
+    return {"diff": metric(y_true, pred_a) - metric(y_true, pred_b), "ci95": (float(lo), float(hi))}
+
+
 def score(y_true, y_pred, folds=None, with_ci=True):
     """Point estimate, 95% bootstrap CI, and (if folds given) the mean and SD across folds."""
     out = {}
