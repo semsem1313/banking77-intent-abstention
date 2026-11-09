@@ -1,0 +1,133 @@
+{
+  "n_seen": 8585,
+  "n_unseen": 1414,
+  "seen_oof_accuracy": 0.9114735002912056,
+  "seen_oof_macro_f1": 0.9100201179267721,
+  "mean_confidence": {
+    "seen": 0.8028630037580062,
+    "unseen": 0.4269283362438838
+  },
+  "auroc_seen_vs_unseen": 0.8554769305036003,
+  "at_cost_thresholds": {
+    "2": {
+      "threshold": 0.24007217378894355,
+      "unseen_handed_off": 0.29207920792079206,
+      "seen_handed_off": 0.03296447291788007,
+      "seen_accuracy_on_answered": 0.9289327872801735
+    },
+    "5": {
+      "threshold": 0.5420705037199071,
+      "unseen_handed_off": 0.6966053748231966,
+      "seen_handed_off": 0.1596971461852068,
+      "seen_accuracy_on_answered": 0.9672858331023011
+    },
+    "10": {
+      "threshold": 0.6786981560396937,
+      "unseen_handed_off": 0.801980198019802,
+      "seen_handed_off": 0.23983692486895747,
+      "seen_accuracy_on_answered": 0.9808458473797119
+    }
+  },
+  "by_unseen_intent": {
+    "activate_my_card": {
+      "n": 159,
+      "mean_confidence": 0.4528234506111515,
+      "handed_off_at_k5": 0.6540880503144654,
+      "most_common_predictions": {
+        "card_linking": 122,
+        "card_not_working": 12,
+        "card_delivery_estimate": 5
+      }
+    },
+    "automatic_top_up": {
+      "n": 127,
+      "mean_confidence": 0.33572138245484673,
+      "handed_off_at_k5": 0.8267716535433071,
+      "most_common_predictions": {
+        "top_up_limits": 38,
+        "top_up_failed": 19,
+        "top_up_reverted": 16
+      }
+    },
+    "card_arrival": {
+      "n": 153,
+      "mean_confidence": 0.30584196866780516,
+      "handed_off_at_k5": 0.8431372549019608,
+      "most_common_predictions": {
+        "card_delivery_estimate": 68,
+        "card_linking": 19,
+        "transfer_not_received_by_recipient": 12
+      }
+    },
+    "declined_card_payment": {
+      "n": 153,
+      "mean_confidence": 0.49099909573469813,
+      "handed_off_at_k5": 0.5882352941176471,
+      "most_common_predictions": {
+        "declined_transfer": 53,
+        "reverted_card_payment?": 51,
+        "card_not_working": 28
+      }
+    },
+    "declined_cash_withdrawal": {
+      "n": 173,
+      "mean_confidence": 0.4520837439806655,
+      "handed_off_at_k5": 0.6994219653179191,
+      "most_common_predictions": {
+        "wrong_amount_of_cash_received": 37,
+        "pending_cash_withdrawal": 31,
+        "declined_transfer": 30
+      }
+    },
+    "exchange_via_app": {
+      "n": 118,
+      "mean_confidence": 0.4656464516518927,
+      "handed_off_at_k5": 0.6271186440677966,
+      "most_common_predictions": {
+        "exchange_charge": 36,
+        "fiat_currency_support": 31,
+        "receiving_money": 17
+      }
+    },
+    "passcode_forgotten": {
+      "n": 105,
+      "mean_confidence": 0.1752071938963257,
+      "handed_off_at_k5": 0.9523809523809523,
+      "most_common_predictions": {
+        "card_not_working": 24,
+        "direct_debit_payment_not_recognised": 10,
+        "pin_blocked": 10
+      }
+    },
+    "pending_top_up": {
+      "n": 149,
+      "mean_confidence": 0.4258968996370044,
+      "handed_off_at_k5": 0.7449664429530202,
+      "most_common_predictions": {
+        "top_up_failed": 57,
+        "pending_transfer": 32,
+        "top_up_reverted": 30
+      }
+    },
+    "top_up_by_card_charge": {
+      "n": 114,
+      "mean_confidence": 0.37361748772663045,
+      "handed_off_at_k5": 0.8245614035087719,
+      "most_common_predictions": {
+        "top_up_by_bank_transfer_charge": 43,
+        "card_payment_fee_charged": 28,
+        "topping_up_by_card": 15
+      }
+    },
+    "wrong_exchange_rate_for_cash_withdrawal": {
+      "n": 163,
+      "mean_confidence": 0.6719011310852021,
+      "handed_off_at_k5": 0.3496932515337423,
+      "most_common_predictions": {
+        "card_payment_wrong_exchange_rate": 102,
+        "cash_withdrawal_charge": 21,
+        "exchange_rate": 16
+      }
+    }
+  }
+}

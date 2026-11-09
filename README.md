@@ -42,6 +42,8 @@ python -m venv .venv
 .venv/Scripts/python -m src.tune_more        # ~5 min (KNN, SVD + LR, random forest, H4 curve)
 .venv/Scripts/python -m src.error_predictor  # ~1 min (E1)
 .venv/Scripts/python -m src.analysis         # ~30 s (H2, H3, figures)
+.venv/Scripts/python -m src.h1               # seconds (H1; creates reports/error_labels.csv for hand labels)
+.venv/Scripts/python -m src.experiments      # ~5 min (unseen-intent test, learning curves)
 .venv/Scripts/python -m src.evaluate_final   # run once, on frozen models
 .venv/Scripts/python -m src.export_web
 .venv/Scripts/python -m pytest               # ~35 s
@@ -56,8 +58,8 @@ python -m venv .venv
 | Main model M1 (TF-IDF + logistic regression, L2 and L1), OOF probabilities | Done |
 | H2 abstention, H3 calibration (`src/analysis.py`) | Done (cross-validated) |
 | M2 KNN, M3 SVD + LR (H4), M4 random forest (`src/tune_more.py`); E1 error predictor (`src/error_predictor.py`) | Done (cross-validated) |
-| H1 error analysis, unseen intents, learning curves | Next |
-| Final test run, website | To do |
+| H1 error analysis (`src/h1.py`), unseen intents and learning curves (`src/experiments.py`) | Done, except H1(b) hand labels |
+| Final test run, website | Next |
 
 ## Cross-validated results so far (out-of-fold, 9,999 training messages)
 
@@ -136,6 +138,52 @@ The thresholds are chosen on out-of-fold predictions, so these costs are slightl
 - The pre-registered bar (≥ 90% of full TF-IDF macro-F1 at ≤ 300 dimensions) is met at 100, 200, and 300 dimensions.
 - With only 100 dimensions (about a 330× compression, 34% of the variance), the model keeps 94% of the macro-F1.
 - SVD is fit inside each training fold: one 1000-component fit per fold, truncated to each smaller size.
+
+### H1: most errors come from overlapping intent definitions (parts a and c pass; b awaiting hand labels)
+
+The confusable-group rule was fixed in a pre-registration amendment before this was computed: two intents are linked if the main model confuses them at least 5 times in total, and groups are connected components.
+
+| Edge threshold | Errors inside confusable groups | If errors were random | Groups (sizes) |
+|---|---|---|---|
+| 3 | 88.7% | 66.1% | 59, 4, 3, 2 |
+| **5 (pre-registered)** | **65.6%** | 19.8% | 29, 7, 4, 3, 3, 3, 3, 2, 2 |
+| 8 | 37.6% | 2.2% | 13 groups of 2–5 |
+| 10 | 26.6% | 1.2% | 10 groups of 2–4 |
+
+- **(a) passes** at the pre-registered threshold. At threshold 5, though, one group chains 29 intents (transfers, card payments, cash withdrawals), and the share drops below 50% at stricter thresholds.
+- **At every threshold, errors land inside confusable groups far more often than chance** (3.3× at 5, 22× at 10).
+- **Merging the 9 groups** raises accuracy from 0.901 to 0.966 and macro-F1 from 0.900 to 0.949. **Top-3 accuracy is 0.973.**
+- **(c) passes.** Different model families make the same mistakes: 6 of LR's top-10 confused pairs are also in KNN's top 10, and 7 are in the random forest's.
+- **(b)** is about 50 randomly sampled errors (`reports/error_labels.csv`) being labeled by cause. It's pending.
+
+### Unseen intents: can confidence reject what the model never saw? (exploratory)
+
+![Confidence on seen vs unseen intents](reports/figures/unseen_confidence.png)
+
+- **Setup:** the main model's configuration was trained on 67 intents, with 10 held out entirely.
+- **Confidence separation:** mean confidence is 0.80 on seen intents vs 0.43 on unseen ones (AUROC 0.855).
+
+| k | Threshold (chosen on seen intents only) | Unseen messages handed off | Seen messages handed off |
+|---|---|---|---|
+| 2 | 0.240 | 29.2% | 3.3% |
+| 5 | 0.542 | 69.7% | 16.0% |
+| 10 | 0.679 | 80.2% | 24.0% |
+
+Confidence catches most unseen intents, but it leaks when an unseen intent has a close seen neighbour. Only 35% of "wrong exchange rate for cash withdrawal" messages are handed off, because they look like "card payment wrong exchange rate".
+
+### Learning curve
+
+![Learning curve](reports/figures/learning_curve.png)
+
+These are nested, stratified subsets of each training fold, with 5 draws per size.
+
+| Training share | 5% | 10% | 25% | 50% | 100% |
+|---|---|---|---|---|---|
+| Messages | 438 | 833 | 2,031 | 4,020 | 7,999 |
+| Macro-F1 | 0.624 | 0.727 | 0.826 | 0.869 | 0.900 |
+
+- With 5% of the data, the model matches the keyword rule trained on all of it.
+- The curve is still rising at 100%, so more labeled data would likely help.
 
 ## AI-use disclosure
 

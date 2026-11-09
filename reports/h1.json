@@ -1,0 +1,340 @@
+{
+  "a_within_group_share": {
+    "5": {
+      "share": 0.6559031281533805,
+      "chance_share": 0.198364225396994,
+      "errors_inside": 650,
+      "errors_total": 991,
+      "n_groups": 9,
+      "group_sizes": [
+        29,
+        7,
+        4,
+        3,
+        3,
+        3,
+        3,
+        2,
+        2
+      ],
+      "intents_in_groups": 56
+    },
+    "3": {
+      "share": 0.8869828456104945,
+      "chance_share": 0.660749375962611,
+      "errors_inside": 879,
+      "errors_total": 991,
+      "n_groups": 4,
+      "group_sizes": [
+        59,
+        4,
+        3,
+        2
+      ],
+      "intents_in_groups": 68
+    },
+    "8": {
+      "share": 0.3763874873864783,
+      "chance_share": 0.022173243401136543,
+      "errors_inside": 373,
+      "errors_total": 991,
+      "n_groups": 13,
+      "group_sizes": [
+        5,
+        5,
+        4,
+        3,
+        3,
+        3,
+        3,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "intents_in_groups": 38
+    },
+    "10": {
+      "share": 0.26639757820383453,
+      "chance_share": 0.011617717350894896,
+      "errors_inside": 264,
+      "errors_total": 991,
+      "n_groups": 10,
+      "group_sizes": [
+        4,
+        3,
+        3,
+        3,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "intents_in_groups": 25
+    },
+    "groups_at_5": [
+      [
+        "balance_not_updated_after_bank_transfer",
+        "balance_not_updated_after_cheque_or_cash_deposit",
+        "beneficiary_not_allowed",
+        "card_not_working",
+        "card_payment_fee_charged",
+        "card_payment_not_recognised",
+        "cash_withdrawal_charge",
+        "cash_withdrawal_not_recognised",
+        "compromised_card",
+        "declined_card_payment",
+        "declined_cash_withdrawal",
+        "declined_transfer",
+        "direct_debit_payment_not_recognised",
+        "extra_charge_on_statement",
+        "failed_transfer",
+        "lost_or_stolen_card",
+        "pending_card_payment",
+        "pending_cash_withdrawal",
+        "pending_transfer",
+        "receiving_money",
+        "reverted_card_payment?",
+        "top_up_by_bank_transfer_charge",
+        "top_up_by_card_charge",
+        "transfer_fee_charged",
+        "transfer_into_account",
+        "transfer_not_received_by_recipient",
+        "transfer_timing",
+        "verify_source_of_funds",
+        "wrong_amount_of_cash_received"
+      ],
+      [
+        "exchange_via_app",
+        "fiat_currency_support",
+        "pending_top_up",
+        "supported_cards_and_currencies",
+        "top_up_failed",
+        "top_up_reverted",
+        "topping_up_by_card"
+      ],
+      [
+        "card_payment_wrong_exchange_rate",
+        "exchange_charge",
+        "exchange_rate",
+        "wrong_exchange_rate_for_cash_withdrawal"
+      ],
+      [
+        "card_about_to_expire",
+        "country_support",
+        "order_physical_card"
+      ],
+      [
+        "change_pin",
+        "get_physical_card",
+        "pin_blocked"
+      ],
+      [
+        "disposable_card_limits",
+        "get_disposable_virtual_card",
+        "getting_virtual_card"
+      ],
+      [
+        "unable_to_verify_identity",
+        "verify_my_identity",
+        "why_verify_identity"
+      ],
+      [
+        "Refund_not_showing_up",
+        "request_refund"
+      ],
+      [
+        "card_arrival",
+        "card_delivery_estimate"
+      ]
+    ],
+    "supported": true
+  },
+  "b_hand_labels": {
+    "status": "pending",
+    "labeled": 0,
+    "of": 50
+  },
+  "c_cross_model_pairs": {
+    "top10": {
+      "LR": [
+        [
+          "pending_top_up",
+          "top_up_failed",
+          18
+        ],
+        [
+          "card_arrival",
+          "card_delivery_estimate",
+          17
+        ],
+        [
+          "verify_my_identity",
+          "why_verify_identity",
+          17
+        ],
+        [
+          "balance_not_updated_after_bank_transfer",
+          "transfer_timing",
+          16
+        ],
+        [
+          "card_payment_not_recognised",
+          "direct_debit_payment_not_recognised",
+          16
+        ],
+        [
+          "unable_to_verify_identity",
+          "verify_my_identity",
+          15
+        ],
+        [
+          "balance_not_updated_after_bank_transfer",
+          "pending_transfer",
+          14
+        ],
+        [
+          "top_up_failed",
+          "top_up_reverted",
+          14
+        ],
+        [
+          "unable_to_verify_identity",
+          "why_verify_identity",
+          14
+        ],
+        [
+          "card_payment_wrong_exchange_rate",
+          "wrong_exchange_rate_for_cash_withdrawal",
+          13
+        ]
+      ],
+      "KNN": [
+        [
+          "verify_my_identity",
+          "why_verify_identity",
+          29
+        ],
+        [
+          "card_arrival",
+          "card_delivery_estimate",
+          25
+        ],
+        [
+          "card_payment_fee_charged",
+          "cash_withdrawal_charge",
+          25
+        ],
+        [
+          "balance_not_updated_after_bank_transfer",
+          "transfer_timing",
+          23
+        ],
+        [
+          "card_payment_wrong_exchange_rate",
+          "wrong_exchange_rate_for_cash_withdrawal",
+          22
+        ],
+        [
+          "declined_card_payment",
+          "declined_transfer",
+          21
+        ],
+        [
+          "unable_to_verify_identity",
+          "verify_my_identity",
+          21
+        ],
+        [
+          "card_payment_not_recognised",
+          "direct_debit_payment_not_recognised",
+          19
+        ],
+        [
+          "balance_not_updated_after_bank_transfer",
+          "transfer_not_received_by_recipient",
+          18
+        ],
+        [
+          "disposable_card_limits",
+          "get_disposable_virtual_card",
+          18
+        ]
+      ],
+      "RF": [
+        [
+          "unable_to_verify_identity",
+          "why_verify_identity",
+          23
+        ],
+        [
+          "verify_my_identity",
+          "why_verify_identity",
+          21
+        ],
+        [
+          "balance_not_updated_after_bank_transfer",
+          "transfer_timing",
+          20
+        ],
+        [
+          "pending_top_up",
+          "top_up_failed",
+          20
+        ],
+        [
+          "balance_not_updated_after_bank_transfer",
+          "transfer_not_received_by_recipient",
+          19
+        ],
+        [
+          "card_payment_not_recognised",
+          "direct_debit_payment_not_recognised",
+          19
+        ],
+        [
+          "card_arrival",
+          "card_delivery_estimate",
+          18
+        ],
+        [
+          "card_payment_fee_charged",
+          "extra_charge_on_statement",
+          17
+        ],
+        [
+          "card_payment_wrong_exchange_rate",
+          "wrong_exchange_rate_for_cash_withdrawal",
+          17
+        ],
+        [
+          "pending_transfer",
+          "transfer_not_received_by_recipient",
+          17
+        ]
+      ]
+    },
+    "shared_with_LR": {
+      "KNN": 6,
+      "RF": 7
+    },
+    "supported": true
+  },
+  "merge": {
+    "accuracy_before": 0.9008900890089009,
+    "accuracy_after": 0.9658965896589659,
+    "macro_f1_before": 0.8999011716817895,
+    "macro_f1_after": 0.9491232734412851,
+    "n_labels_after": 30
+  },
+  "top3_accuracy": 0.9727972797279728,
+  "coarse": {
+    "status": "awaiting author approval of reports/coarse_groups.json"
+  },
+  "verdict": "pending (hand labels)",
+  "labeling_sheet_created_now": false
+}
