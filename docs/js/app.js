@@ -15,8 +15,18 @@
   const renderers = [];    // re-run when the colour scheme changes
   const charts = {};
 
+  // Update an existing chart in place instead of destroying it. Destroying and recreating a chart
+  // on every slider tick, while the previous one was still animating, crashed Chart.js's shared
+  // animation loop ("this._fn is not a function") and blanked every chart on the page.
   function chart(id, config) {
-    if (charts[id]) charts[id].destroy();
+    const c = charts[id];
+    if (c && c.config.type === config.type) {
+      c.data = config.data;
+      c.options = config.options;
+      c.update("none");
+      return c;
+    }
+    if (c) c.destroy();
     charts[id] = new Chart(document.getElementById(id), config);
     return charts[id];
   }
@@ -27,11 +37,16 @@
     Chart.defaults.font.family = css("--sans");
     Chart.defaults.font.size = 12;
     Chart.defaults.plugins.legend.labels.boxWidth = 12;
-    Chart.defaults.animation = { duration: 200 };
+    Chart.defaults.animation = false;      // sliders redraw on every tick; animation only adds lag
     Chart.defaults.maintainAspectRatio = false;
   }
   const S = (i) => css(`--series-${i}`);
-  const alpha = (color, a) => `color-mix(in srgb, ${color} ${Math.round(a * 100)}%, transparent)`;
+  // Translucent version of a #rrggbb token, as rgba() so every canvas and Chart.js can parse it.
+  const alpha = (color, a) => {
+    const h = color.replace("#", "");
+    const n = parseInt(h.length === 3 ? h.split("").map((x) => x + x).join("") : h, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a.toFixed(3)})`;
+  };
 
   function seg(id, onChange) {
     const el = document.getElementById(id);
