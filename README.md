@@ -51,7 +51,8 @@ python -m venv .venv
 | Pre-registration, data download, split, tests | Done |
 | Baselines (B0 majority, B1 keyword rule, B2 random abstention) | Done |
 | Main model M1 (TF-IDF + logistic regression, L2 and L1), OOF probabilities | Done |
-| H2 abstention, H3 calibration, error predictor, KNN, SVD (H4) | Next |
+| H2 abstention, H3 calibration (`src/analysis.py`) | Done (cross-validated) |
+| Error predictor, KNN, SVD (H4), trees | Next |
 | H1 error analysis, unseen intents, learning curves, final test run, website | To do |
 
 ## Cross-validated results so far (out-of-fold, 9,999 training messages)
@@ -72,7 +73,36 @@ Each message is predicted by a model fit on the other four folds. Brackets show 
   - Regrouping near-duplicates at 0.80 changes macro-F1 by −0.0008.
   - Across fold seeds 335–339, macro-F1 has mean 0.901 and SD 0.002.
 
-B2 (random abstention) is applied to M1's predictions in the H2 analysis.
+### H2: abstention beats random abstention (supported, cross-validated)
+
+![Risk-coverage curve](reports/figures/h2_risk_coverage.png)
+
+- Answering only the most confident messages gives a much lower error than answering a random subset of the same size (B2).
+- The pre-registered test passes at **every** coverage level from 0.50 to 0.95: the 95% bootstrap CI of the difference is below 0 throughout.
+- For M1-L2, the area under the risk-coverage curve is **0.018**, vs **0.099** for random abstention.
+
+**Cost-based handoff thresholds** (M1-L2). Cost per message = k × wrong auto-answers + 1 × handoffs. k is an assumed cost ratio.
+
+| k | Threshold | Answered | Accuracy on answered | Cost / message | Answer all | Hand off all |
+|---|---|---|---|---|---|---|
+| 2 | 0.228 | 96.7% | 92.0% | 0.189 | 0.198 | 1.0 |
+| 5 | 0.560 | 82.0% | 96.7% | 0.316 | 0.496 | 1.0 |
+| 10 | 0.685 | 74.1% | 98.0% | 0.408 | 0.991 | 1.0 |
+
+The thresholds are chosen on out-of-fold predictions, so these costs are slightly optimistic. The fixed thresholds are applied to the test set once.
+
+### H3: the most accurate model is not the best calibrated (supported, provisional)
+
+![Reliability diagram](reports/figures/h3_reliability.png)
+
+| Model | Macro-F1 | Accuracy | Mean confidence | ECE (15 bins) [95% CI] |
+|---|---|---|---|---|
+| M1-L2 (most accurate) | 0.900 | 0.901 | 0.793 | 0.107 [0.103, 0.113] |
+| M1-L1 | 0.860 | 0.863 | 0.807 | 0.058 [0.055, 0.065] |
+
+- M1-L2 is **underconfident**: it's right 90% of the time but averages 79% confidence.
+- Its confidence still ranks right and wrong answers well (H2), but the absolute probabilities shouldn't be read literally.
+- The H3 verdict will be rechecked once the remaining models (KNN, SVD + LR, trees) are added.
 
 ## AI-use disclosure
 
