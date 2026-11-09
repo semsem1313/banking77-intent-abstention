@@ -13,7 +13,7 @@ An exploratory test also asks whether the model can reject intents it never saw 
 
 The hypotheses, split rules, and decision criteria were pre-registered in [PREREGISTRATION.md](PREREGISTRATION.md) before any model was trained.
 
-- **Live site:** https://semsem1313.github.io/banking77-intent-abstention/ (in progress)
+- **Live site:** https://semsem1313.github.io/banking77-intent-abstention/ (the main model runs in your browser; see [Website](#website))
 - **Data:** BANKING77 (Casanueva et al., 2020, arXiv:2003.04807), CC BY 4.0. It's downloaded from [PolyAI-LDN/task-specific-datasets](https://github.com/PolyAI-LDN/task-specific-datasets) at a pinned commit, with SHA-256 checks. There are 10,003 training and 3,080 test messages across 77 intents.
 
 ## Evaluation design
@@ -47,7 +47,7 @@ python -m venv .venv
 .venv/Scripts/python -m src.evaluate_final --dry-run   # ~5 min; full rehearsal on fold 0, never opens test.csv
 .venv/Scripts/python -m src.evaluate_final   # run once, on frozen models
 .venv/Scripts/python -m src.export_web
-.venv/Scripts/python -m pytest               # ~35 s
+.venv/Scripts/python -m pytest               # ~30 s (39 tests)
 ```
 
 ## Status
@@ -61,7 +61,7 @@ python -m venv .venv
 | M2 KNN, M3 SVD + LR (H4), M4 random forest (`src/tune_more.py`); E1 error predictor (`src/error_predictor.py`) | Done (cross-validated) |
 | H1 error analysis (`src/h1.py`, including the author's 50 hand labels), unseen intents and learning curves (`src/experiments.py`) | Done |
 | **Final test-set run (`src/evaluate_final.py`), run once on commit `c21163f`** | **Done** |
-| Website (`docs/`) | Next |
+| Website (`docs/`, `src/export_web.py`), browser/Python parity check | Done |
 
 ## Final test-set results (3,080 messages, run once)
 
@@ -182,7 +182,7 @@ The thresholds are chosen on out-of-fold predictions, so these costs are slightl
 - With only 100 dimensions (about a 330× compression, 34% of the variance), the model keeps 94% of the macro-F1.
 - SVD is fit inside each training fold: one 1000-component fit per fold, truncated to each smaller size.
 
-### H1: most errors come from overlapping intent definitions (parts a and c pass; b awaiting hand labels)
+### H1: most errors come from overlapping intent definitions (supported: parts a, b and c all pass)
 
 The confusable-group rule was fixed in a pre-registration amendment before this was computed: two intents are linked if the main model confuses them at least 5 times in total, and groups are connected components.
 
@@ -197,7 +197,7 @@ The confusable-group rule was fixed in a pre-registration amendment before this 
 - **At every threshold, errors land inside confusable groups far more often than chance** (3.3× at 5, 22× at 10).
 - **Merging the 9 groups** raises accuracy from 0.901 to 0.966 and macro-F1 from 0.900 to 0.949. **Top-3 accuracy is 0.973.**
 - **(c) passes.** Different model families make the same mistakes: 6 of LR's top-10 confused pairs are also in KNN's top 10, and 7 are in the random forest's.
-- **(b)** is about 50 randomly sampled errors (`reports/error_labels.csv`) being labeled by cause. It's pending.
+- **(b) passes.** The author hand-labelled 50 randomly sampled errors (`reports/error_labels.csv`): ambiguous label 66%, vague message 14%, possible mislabel 14%, vocabulary gap 6%. Most errors trace back to the label set, not the model.
 
 ### Unseen intents: can confidence reject what the model never saw? (exploratory)
 
@@ -227,6 +227,33 @@ These are nested, stratified subsets of each training fold, with 5 draws per siz
 
 - With 5% of the data, the model matches the keyword rule trained on all of it.
 - The curve is still rising at 100%, so more labeled data would likely help.
+
+## Website
+
+The site in `docs/` is plain HTML, CSS, and JavaScript with Chart.js from a CDN. There's no server, and it is published with GitHub Pages from `main` / `docs`.
+
+- **Live classifier:** the main model (M1-L2, fit on all 9,999 training messages) runs in the browser. It's the same model scored on the test set; its test probabilities match the frozen run to 3e-8. It shows the top 3 intents, the words that pushed the prediction, and the handoff decision at the chosen cost ratio.
+- **Interactive figures:**
+  - H2 threshold and cost slider: CV, test, and unseen-intent modes, with the random-abstention line;
+  - H3 reliability by model;
+  - H4 SVD curve;
+  - H1 merge toggle on an error confusion matrix;
+  - learning-curve slider.
+- **Export:** `src/export_web.py` writes these files to `docs/assets/`:
+  - `model.json`: vocabulary, IDF, intercepts;
+  - `weights.bin`: int8 weights with one scale per feature, 2.9 MB instead of 11 MB as float32. On 500 messages the top intent agrees 100% with the float model;
+  - `results.json`;
+  - `parity.json`.
+- **Parity:**
+  - [`docs/parity.html`](docs/parity.html) runs the JavaScript model on 500 training messages and compares it with Python: 500/500 top intents match, and the largest probability difference is 1e-6.
+  - `tests/test_web_export.py` checks that a Python mirror of the JavaScript tokenizer and n-gram code equals sklearn on all 9,999 training messages.
+- **Local preview:** `fetch` needs a web server, so start one:
+
+  ```bash
+  .venv/Scripts/python -m http.server 8335 --directory docs
+  ```
+
+  Then open http://localhost:8335.
 
 ## AI-use disclosure
 

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Parity Check</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>Browser / Python parity check</h1>
+  <p>Runs the in-browser model on 500 training messages (raw text, normalised here in JavaScript) and compares
+    its probabilities with the ones Python computed from the same int8 weights (<code>docs/assets/parity.json</code>,
+    written by <code>src/export_web.py</code>). It also compares the top intent with Python's full-precision model.</p>
+  <pre id="out">Running…</pre>
+  <p><a href="./">Back to the study</a></p>
+</main>
+<script src="js/model.js"></script>
+<script>
+(async () => {
+  const out = document.getElementById("out");
+  try {
+    const [model, par] = await Promise.all([IntentModel.load("assets/"), fetch("assets/parity.json").then(r => r.json())]);
+    let maxDiff = 0, topQuant = 0, topFloat = 0;
+    const mismatches = [];
+    const t0 = performance.now();
+    par.texts.forEach((t, i) => {
+      const r = model.predict(t);
+      const ref = par.p_quant[i];
+      let refTop = 0;
+      for (let c = 0; c < ref.length; c++) {
+        maxDiff = Math.max(maxDiff, Math.abs(r.proba[c] - ref[c]));
+        if (ref[c] > ref[refTop]) refTop = c;
+      }
+      if (r.top === refTop) topQuant++; else mismatches.push(t);
+      if (model.classes[r.top] === par.top1_float[i]) topFloat++;
+    });
+    const ms = (performance.now() - t0) / par.texts.length;
+    const n = par.texts.length;
+    const pass = topQuant === n && maxDiff < 1e-4;
+    window.parityResult = { n, topQuant, topFloat, maxDiff, msPerMessage: ms, pass };
+    out.textContent = [
+      `messages:                                  ${n}`,
+      `top intent matches Python (same weights):  ${topQuant}/${n}`,
+      `top intent matches Python (float model):   ${topFloat}/${n}`,
+      `max |probability difference|:              ${maxDiff.toExponential(2)}`,
+      `time per message:                          ${ms.toFixed(2)} ms`,
+      ``,
+      pass ? "PASS" : "FAIL",
+      ...mismatches.slice(0, 10).map(t => "  mismatch: " + t),
+    ].join("\n");
+  } catch (e) {
+    out.textContent = "Error: " + e;
+    window.parityResult = { error: String(e), pass: false };
+  }
+})();
+</script>
+</body>
+</html>

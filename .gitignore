@@ -23,3 +23,6 @@ PROJECT_JOURNAL.md
 
 # Local viva-prep material. Kept local only.
 viva/
+
+# Local editor/agent config
+.claude/
