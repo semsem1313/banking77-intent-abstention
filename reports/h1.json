@@ -155,9 +155,16 @@
     "supported": true
   },
   "b_hand_labels": {
-    "status": "pending",
-    "labeled": 0,
-    "of": 50
+    "status": "done",
+    "n": 50,
+    "shares": {
+      "ambiguous_label": 0.66,
+      "vague_message": 0.14,
+      "vocabulary_gap": 0.06,
+      "possible_mislabel": 0.14
+    },
+    "most_common": "ambiguous_label",
+    "supported": true
   },
   "c_cross_model_pairs": {
     "top10": {
@@ -333,8 +340,10 @@
   },
   "top3_accuracy": 0.9727972797279728,
   "coarse": {
-    "status": "awaiting author approval of reports/coarse_groups.json"
+    "status": "done",
+    "accuracy": 0.9604960496049605,
+    "share_of_errors_within_same_coarse_category": 0.6014127144298688
   },
-  "verdict": "pending (hand labels)",
+  "verdict": "supported",
   "labeling_sheet_created_now": false
 }
