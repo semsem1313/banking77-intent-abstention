@@ -1,0 +1,75 @@
+{
+  "full_tfidf_macro_f1": 0.8999011716817895,
+  "curve": [
+    {
+      "d": 25,
+      "C": 100,
+      "macro_f1_fold_mean": 0.7228053488210848,
+      "macro_f1_fold_sd": 0.010517977759032933,
+      "pooled_macro_f1": 0.7241484977856483,
+      "share_of_full_tfidf": 0.8046978052404532,
+      "explained_variance": 0.15039614693266423
+    },
+    {
+      "d": 50,
+      "C": 10,
+      "macro_f1_fold_mean": 0.7911911574841468,
+      "macro_f1_fold_sd": 0.009478636459804653,
+      "pooled_macro_f1": 0.7918265512227327,
+      "share_of_full_tfidf": 0.8799039007171416,
+      "explained_variance": 0.23131667581589554
+    },
+    {
+      "d": 100,
+      "C": 10,
+      "macro_f1_fold_mean": 0.8436075737637252,
+      "macro_f1_fold_sd": 0.008329475125295973,
+      "pooled_macro_f1": 0.8440197813867258,
+      "share_of_full_tfidf": 0.937902747486561,
+      "explained_variance": 0.3358102258271913
+    },
+    {
+      "d": 200,
+      "C": 10,
+      "macro_f1_fold_mean": 0.873165290308461,
+      "macro_f1_fold_sd": 0.007926604322191734,
+      "pooled_macro_f1": 0.8735805868590013,
+      "share_of_full_tfidf": 0.9707516940181345,
+      "explained_variance": 0.4585415208147934
+    },
+    {
+      "d": 300,
+      "C": 10,
+      "macro_f1_fold_mean": 0.8812711463315216,
+      "macro_f1_fold_sd": 0.01025360678123144,
+      "pooled_macro_f1": 0.8816500048844829,
+      "share_of_full_tfidf": 0.9797186987064394,
+      "explained_variance": 0.5337949474623407
+    },
+    {
+      "d": 500,
+      "C": 10,
+      "macro_f1_fold_mean": 0.8901928075817542,
+      "macro_f1_fold_sd": 0.0075358453816930385,
+      "pooled_macro_f1": 0.8907735068973366,
+      "share_of_full_tfidf": 0.9898570364483529,
+      "explained_variance": 0.6272454753932568
+    },
+    {
+      "d": 1000,
+      "C": 10,
+      "macro_f1_fold_mean": 0.8953823475455176,
+      "macro_f1_fold_sd": 0.010430389984265704,
+      "pooled_macro_f1": 0.8958950946247336,
+      "share_of_full_tfidf": 0.9955483144337182,
+      "explained_variance": 0.7438686005729689
+    }
+  ],
+  "dims_at_or_below_300_reaching_90pct": [
+    100,
+    200,
+    300
+  ],
+  "smallest_d_reaching_90pct": 100,
+  "supported": true
+}

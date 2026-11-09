@@ -20,7 +20,9 @@ from src.baselines import random_abstention_error
 from src.config import COST_RATIOS, COVERAGE_GRID, DATA_PROCESSED, ECE_BINS, N_BOOTSTRAP, REPORTS, SEED
 from src.metrics import macro_f1
 
-MODELS = {"M1_L2": "M1-L2 (main)", "M1_L1": "M1-L1"}
+MODELS = {"M1_L2": "M1-L2 (main)", "M1_L1": "M1-L1"}          # H2 test and figure
+H3_MODELS = {**MODELS, "M2_KNN": "M2 KNN", "M2_KNN_SVD": "M2 KNN on SVD-300",
+             "M3_SVD_LR": "M3 SVD-300 + LR", "M4_RF_SVD": "M4 random forest on SVD-300"}
 CURVE_COVERAGES = np.round(np.arange(0.05, 1.0001, 0.01), 2)
 
 
@@ -153,6 +155,7 @@ def h3(names):
         conf, correct = proba.max(axis=1), pred == y
         rows[name] = {"macro_f1": macro_f1(y, pred), "ece": ece(conf, correct), "ece_ci95": ece_ci(conf, correct),
                       "mean_confidence": float(conf.mean()), "accuracy": float(correct.mean()),
+                      "aurc": float(np.mean([selective_error(conf, correct, c) for c in CURVE_COVERAGES])),
                       "reliability": reliability_bins(conf, correct)}
     most_accurate = max(rows, key=lambda m: rows[m]["macro_f1"])
     best_calibrated = min(rows, key=lambda m: rows[m]["ece"])
@@ -190,7 +193,7 @@ def plot_h3(result, path):
     ax.plot([0, 1], [0, 1], color="grey", lw=1, label="perfect calibration")
     for name, r in result["models"].items():
         pts = [(b["mean_confidence"], b["accuracy"]) for b in r["reliability"] if b["count"] >= 20]
-        ax.plot(*zip(*pts), "o-", label=f"{MODELS[name]} (ECE {r['ece']:.3f})")
+        ax.plot(*zip(*pts), "o-", label=f"{H3_MODELS[name]} (ECE {r['ece']:.3f})")
     ax.set(xlabel="Mean predicted confidence (bin)", ylabel="Accuracy (bin)", title="H3: reliability (OOF; bins with >= 20 messages)")
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -210,7 +213,7 @@ def main():
                   f"selective acc {t['selective_accuracy']:.3f}, cost {t['cost_per_message']:.4f} "
                   f"(answer all {t['cost_answer_all']:.4f}, hand off all 1.0)")
 
-    h3_result = h3(list(MODELS))
+    h3_result = h3([m for m in H3_MODELS if (REPORTS / "oof" / f"{m}.npz").exists()])
     (REPORTS / "h3.json").write_text(json.dumps(h3_result, indent=2))
     plot_h3(h3_result, REPORTS / "figures" / "h3_reliability.png")
     for name, r in h3_result["models"].items():

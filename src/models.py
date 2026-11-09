@@ -12,6 +12,7 @@ Later models (M2-M5, E1) are added here as the course reaches them.
 """
 from sklearn.linear_model import LogisticRegression
 from sklearn.multiclass import OneVsRestClassifier
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline, make_union
 
 from src.features import char_tfidf, word_tfidf
@@ -42,3 +43,21 @@ def build_m1(penalty, features, C):
 
 def config_name(family, cfg):
     return f"{family}[{cfg['features']},C={cfg['C']}]"
+
+
+# M2: cosine KNN on the same word+char TF-IDF. Larger k = smoother (simpler) decision boundary,
+# so the grid runs from large k (simplest) to small k for the one-SE rule.
+M2_GRID = [{"k": k, "weights": w} for k in (40, 20, 10, 5, 3, 1) for w in ("uniform", "distance")]
+
+
+def build_knn(k, weights):
+    return make_pipeline(FEATURE_SETS["word+char"](),
+                         KNeighborsClassifier(n_neighbors=k, weights=weights, metric="cosine", algorithm="brute"))
+
+
+# M3 / M4 / H4: TruncatedSVD of word+char TF-IDF, fit inside each training fold (see tune_more.py).
+SVD_MAX_DIM = 1000
+SVD_DIMS = [25, 50, 100, 200, 300, 500, 1000]
+SVD_LR_C = [1, 10, 100]          # simplest (strongest regularization) first
+SVD_MAIN_DIM = 300               # the pre-registered H4 boundary; M3 and M4 are reported at this size
+RF_PARAMS = {"n_estimators": 300, "max_features": "sqrt", "min_samples_leaf": 1}

@@ -39,6 +39,9 @@ python -m venv .venv
 .venv/Scripts/python -m src.split            # ~20 s
 .venv/Scripts/python -m src.baselines        # ~2.5 min (bootstrap CIs)
 .venv/Scripts/python -m src.tune             # ~10 min on 16 cores (M1 grid + robustness checks)
+.venv/Scripts/python -m src.tune_more        # ~5 min (KNN, SVD + LR, random forest, H4 curve)
+.venv/Scripts/python -m src.error_predictor  # ~1 min (E1)
+.venv/Scripts/python -m src.analysis         # ~30 s (H2, H3, figures)
 .venv/Scripts/python -m src.evaluate_final   # run once, on frozen models
 .venv/Scripts/python -m src.export_web
 .venv/Scripts/python -m pytest               # ~35 s
@@ -52,8 +55,9 @@ python -m venv .venv
 | Baselines (B0 majority, B1 keyword rule, B2 random abstention) | Done |
 | Main model M1 (TF-IDF + logistic regression, L2 and L1), OOF probabilities | Done |
 | H2 abstention, H3 calibration (`src/analysis.py`) | Done (cross-validated) |
-| Error predictor, KNN, SVD (H4), trees | Next |
-| H1 error analysis, unseen intents, learning curves, final test run, website | To do |
+| M2 KNN, M3 SVD + LR (H4), M4 random forest (`src/tune_more.py`); E1 error predictor (`src/error_predictor.py`) | Done (cross-validated) |
+| H1 error analysis, unseen intents, learning curves | Next |
+| Final test run, website | To do |
 
 ## Cross-validated results so far (out-of-fold, 9,999 training messages)
 
@@ -65,6 +69,10 @@ Each message is predicted by a model fit on the other four folds. Brackets show 
 | B1: keyword rule, 10 keywords per intent (primary) | 0.568 [0.558, 0.577] | 0.550 [0.540, 0.558] |
 | B1: keyword rule, 20 keywords per intent (strongest baseline) | 0.649 [0.638, 0.658] | 0.629 [0.618, 0.637] |
 | M1-L1: word+char TF-IDF, one-vs-rest L1 logistic regression, C=10 | 0.864 [0.857, 0.870] | 0.860 [0.852, 0.866] |
+| M2: cosine KNN on TF-IDF (k=10, distance-weighted) | 0.827 | 0.826 [0.818, 0.833] |
+| M2: cosine KNN on SVD-300 | 0.824 | 0.821 [0.812, 0.827] |
+| M4: random forest (300 trees) on SVD-300 | 0.838 | 0.836 [0.828, 0.842] |
+| M3: TruncatedSVD (300 dims) + logistic regression | 0.881 | 0.882 [0.875, 0.887] |
 | **M1-L2: word+char TF-IDF, multinomial L2 logistic regression, C=10 (main model)** | **0.901 [0.896, 0.907]** | **0.900 [0.894, 0.906]** |
 
 - **Versus the strongest baseline:** M1-L2 gains **+0.271** macro-F1 (paired bootstrap 95% CI [+0.263, +0.281]).
@@ -91,18 +99,43 @@ Each message is predicted by a model fit on the other four folds. Brackets show 
 
 The thresholds are chosen on out-of-fold predictions, so these costs are slightly optimistic. The fixed thresholds are applied to the test set once.
 
-### H3: the most accurate model is not the best calibrated (supported, provisional)
+**Learned error predictor (E1).** A logistic regression on M1-L2's max probability, margin, entropy, and message length. It's trained only on out-of-fold predictions and scored out-of-fold. As a handoff score it slightly but reliably beats plain max probability:
+
+| | Max probability | E1 |
+|---|---|---|
+| Error-detection AUROC | 0.898 | **0.914** (+0.015, 95% CI [+0.012, +0.018]) |
+| AURC | 0.0183 | **0.0162** (−0.0021, 95% CI [−0.0027, −0.0015]) |
+
+### H3: the most accurate model is not the best calibrated (supported)
 
 ![Reliability diagram](reports/figures/h3_reliability.png)
 
 | Model | Macro-F1 | Accuracy | Mean confidence | ECE (15 bins) [95% CI] |
 |---|---|---|---|---|
 | M1-L2 (most accurate) | 0.900 | 0.901 | 0.793 | 0.107 [0.103, 0.113] |
-| M1-L1 | 0.860 | 0.863 | 0.807 | 0.058 [0.055, 0.065] |
+| M3 SVD-300 + LR | 0.882 | 0.881 | 0.801 | 0.080 [0.075, 0.085] |
+| M1-L1 (best calibrated) | 0.860 | 0.863 | 0.807 | 0.058 [0.055, 0.065] |
+| M4 random forest on SVD-300 | 0.836 | 0.838 | 0.373 | 0.465 [0.458, 0.472] |
+| M2 KNN | 0.826 | 0.827 | 0.686 | 0.143 [0.137, 0.150] |
+| M2 KNN on SVD-300 | 0.821 | 0.824 | 0.736 | 0.091 [0.085, 0.097] |
 
-- M1-L2 is **underconfident**: it's right 90% of the time but averages 79% confidence.
-- Its confidence still ranks right and wrong answers well (H2), but the absolute probabilities shouldn't be read literally.
-- The H3 verdict will be rechecked once the remaining models (KNN, SVD + LR, trees) are added.
+- The most accurate model ranks 4th of 6 on calibration, and its ECE CI doesn't overlap the best-calibrated model's.
+- **Every model is underconfident.** M1-L2 is right 90% of the time but averages 79% confidence. The random forest is the extreme case (84% accuracy, 37% mean confidence), because its probability is a vote share spread across similar intents.
+- Confidence still ranks right and wrong answers well (H2), so thresholds are chosen by observed cost rather than by reading probabilities literally.
+
+### H4: low-dimensional SVD keeps most of the signal (supported)
+
+![Macro-F1 vs SVD dimensions](reports/figures/h4_svd_dims.png)
+
+| SVD dimensions | 25 | 50 | **100** | 200 | **300** | 500 | 1000 |
+|---|---|---|---|---|---|---|---|
+| Macro-F1 (SVD + LR) | 0.724 | 0.792 | **0.844** | 0.874 | **0.882** | 0.891 | 0.896 |
+| Share of full TF-IDF (0.900) | 80.5% | 88.0% | **93.8%** | 97.1% | **98.0%** | 99.0% | 99.6% |
+| Variance explained | 15% | 23% | 34% | 46% | 53% | 63% | 74% |
+
+- The pre-registered bar (≥ 90% of full TF-IDF macro-F1 at ≤ 300 dimensions) is met at 100, 200, and 300 dimensions.
+- With only 100 dimensions (about a 330× compression, 34% of the variance), the model keeps 94% of the macro-F1.
+- SVD is fit inside each training fold: one 1000-component fit per fold, truncated to each smaller size.
 
 ## AI-use disclosure
 

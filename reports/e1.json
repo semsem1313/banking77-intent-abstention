@@ -1,0 +1,44 @@
+{
+  "n_errors": 991,
+  "auroc_error_detection": {
+    "max_prob": 0.8983484576105016,
+    "e1": 0.9135762044905034
+  },
+  "aurc": {
+    "max_prob": 0.018286503844894764,
+    "e1": 0.01615283316477149,
+    "random": 0.09910991099109911
+  },
+  "e1_minus_max_prob": {
+    "auroc_diff_ci95": [
+      0.0119414174370265,
+      0.018210058919469436
+    ],
+    "aurc_diff_ci95": [
+      -0.0027230240172213763,
+      -0.0014846963350295336
+    ],
+    "auroc_diff": 0.015227746880001725,
+    "aurc_diff": -0.0021336706801232744
+  },
+  "standardized_coefficients_fit_on_all_for_display": {
+    "max_prob": -1.57,
+    "margin": -0.782,
+    "entropy": -0.832,
+    "length": -0.271
+  },
+  "feature_means": {
+    "correct": {
+      "max_prob": 0.833,
+      "margin": 0.782,
+      "entropy": 0.802,
+      "length": 59.733
+    },
+    "wrong": {
+      "max_prob": 0.434,
+      "margin": 0.259,
+      "entropy": 2.15,
+      "length": 56.518
+    }
+  }
+}
