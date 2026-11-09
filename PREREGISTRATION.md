@@ -68,3 +68,12 @@ A hypothesis that turns out false is reported as a finding. The criteria above a
 - **Why:** inspecting the training data showed pairs at 0.898–0.899 that differ by a single word ("top-up" vs "top-ups"). That means 0.90 may under-group.
 - **What doesn't change:** the 0.90 rule stays the primary split. No other rule changes.
 - **Timing:** no model had been fit or scored when this was added.
+
+### 2026-11-09: exact rule for H1's confusable intent groups (added before H1 was computed)
+
+The original text says the groups are "built from the OOF confusion matrix", but it doesn't give the rule. It's fixed here **before** computing the share of errors inside groups:
+
+- **Edge rule:** intents i and j are linked if the main model's OOF predictions confuse them **at least 5 times in total** (i predicted as j, plus j predicted as i). The **confusable groups** are the connected components with 2 or more intents.
+- **Sensitivity:** the H1(a) share is also reported for edge thresholds of 3, 8 and 10. The verdict uses 5. Group sizes are reported too, so a single giant component (which would make H1(a) trivially true) is visible.
+- **Disclosure:** the top confused pairs had already been viewed as a preview (Nov 2). The error share inside groups had not been computed.
+- **Coarse categories:** drafted from the intent names into the six pre-registered categories. The author reviews them before coarse accuracy is computed.
