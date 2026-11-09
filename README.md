@@ -44,6 +44,7 @@ python -m venv .venv
 .venv/Scripts/python -m src.analysis         # ~30 s (H2, H3, figures)
 .venv/Scripts/python -m src.h1               # seconds (H1; creates reports/error_labels.csv for hand labels)
 .venv/Scripts/python -m src.experiments      # ~5 min (unseen-intent test, learning curves)
+.venv/Scripts/python -m src.evaluate_final --dry-run   # ~5 min; full rehearsal on fold 0, never opens test.csv
 .venv/Scripts/python -m src.evaluate_final   # run once, on frozen models
 .venv/Scripts/python -m src.export_web
 .venv/Scripts/python -m pytest               # ~35 s
@@ -58,10 +59,52 @@ python -m venv .venv
 | Main model M1 (TF-IDF + logistic regression, L2 and L1), OOF probabilities | Done |
 | H2 abstention, H3 calibration (`src/analysis.py`) | Done (cross-validated) |
 | M2 KNN, M3 SVD + LR (H4), M4 random forest (`src/tune_more.py`); E1 error predictor (`src/error_predictor.py`) | Done (cross-validated) |
-| H1 error analysis (`src/h1.py`), unseen intents and learning curves (`src/experiments.py`) | Done, except H1(b) hand labels |
-| Final test run, website | Next |
+| H1 error analysis (`src/h1.py`, including the author's 50 hand labels), unseen intents and learning curves (`src/experiments.py`) | Done |
+| **Final test-set run (`src/evaluate_final.py`), run once on commit `c21163f`** | **Done** |
+| Website (`docs/`) | Next |
 
-## Cross-validated results so far (out-of-fold, 9,999 training messages)
+## Final test-set results (3,080 messages, run once)
+
+All models and settings were frozen from cross-validation, then refit on all 9,999 training messages and scored **once** on the official test set (`reports/final/final_test.json`; `reports/final/LOCK` records the run). Brackets show 95% bootstrap CIs.
+
+| Model | Accuracy | Macro-F1 |
+|---|---|---|
+| B0: majority intent | 0.013 | 0.000 |
+| B1: keyword rule, k=20 (strongest baseline) | 0.643 [0.626, 0.660] | 0.626 [0.607, 0.638] |
+| M2: KNN on TF-IDF | 0.849 | 0.849 [0.836, 0.859] |
+| M4: random forest on SVD-300 | 0.850 | 0.849 [0.835, 0.859] |
+| M2: KNN on SVD-300 | 0.852 | 0.851 [0.838, 0.861] |
+| M1-L1 | 0.880 | 0.880 [0.868, 0.890] |
+| M3: SVD-300 + logistic regression | 0.893 | 0.893 [0.882, 0.903] |
+| **M1-L2: word+char TF-IDF + L2 logistic regression (main)** | **0.913 [0.903, 0.922]** | **0.913 [0.901, 0.922]** |
+
+- **Versus the strongest baseline:** +0.287 macro-F1 (paired bootstrap 95% CI [+0.273, +0.304]).
+- **Train/test overlap:** 134 test messages (4.4%) are near-duplicates (cosine ≥ 0.90) of training messages. Without them, M1-L2 scores 0.911 macro-F1, so the overlap doesn't drive the result.
+- **Why the test score beats cross-validation (0.900):** the final model trains on all 9,999 messages instead of about 8,000 per fold, and the learning curve is still rising.
+
+| Hypothesis | Test-set evidence | Verdict |
+|---|---|---|
+| **H1** overlapping definitions | 59.5% of errors fall inside the OOF-defined confusable groups. Merging them lifts accuracy 0.913 → 0.965. Top-3 accuracy 0.976. Coarse-category accuracy 0.967. Hand labels: 66% of errors are ambiguous labels. | Supported |
+| **H2** confidence beats random abstention | The CI is below 0 at every coverage level 0.50–0.95. AURC 0.015 vs 0.087 random. | Supported |
+| **H3** most accurate ≠ best calibrated | M1-L2 ECE 0.087 [0.079, 0.097] vs M1-L1 0.051 [0.045, 0.063]. All models are underconfident; the random forest has ECE 0.443. | Supported |
+| **H4** SVD keeps most of the signal | 100 dims reach 93.9% of full TF-IDF macro-F1, and 300 dims reach 97.9%. | Supported |
+| **U** unseen intents (exploratory) | AUROC 0.882. At k=5, 68.5% of unseen-intent messages are handed off, vs 12.9% of seen ones. | — |
+
+**Frozen handoff thresholds applied to the test set** (chosen on OOF data, never tuned on test):
+
+| k | Threshold | Answered | Accuracy on answered | Cost / message | Answer all | Best possible on test |
+|---|---|---|---|---|---|---|
+| 2 | 0.228 | 97.9% | 92.5% | 0.168 | 0.175 | 0.166 |
+| 5 | 0.560 | 85.3% | 97.0% | 0.277 | 0.437 | 0.274 |
+| 10 | 0.685 | 79.1% | 98.1% | 0.361 | 0.873 | 0.350 |
+
+The thresholds chosen on cross-validation land within 0.01 of the best cost achievable on the test set.
+
+**Error predictor E1 on test:** AUROC 0.924 vs 0.908 for max probability; AURC 0.0137 vs 0.0152.
+
+**Learning curve on test** (macro-F1): 0.663 at 5%, 0.760 at 10%, 0.850 at 25%, 0.888 at 50%, 0.913 at 100%.
+
+## Cross-validated results (out-of-fold, 9,999 training messages)
 
 Each message is predicted by a model fit on the other four folds. Brackets show 95% bootstrap CIs. These numbers guide decisions; the final result is the single test-set run.
 
