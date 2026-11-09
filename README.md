@@ -11,7 +11,24 @@ ES 335 · Machine Learning 2026 course project.
 
 An exploratory test also asks whether the model can reject intents it never saw in training.
 
-The hypotheses, split rules, and decision criteria were pre-registered in [PREREGISTRATION.md](PREREGISTRATION.md) before any model was trained.
+The hypotheses, split rules, and decision criteria were pre-registered in [PREREGISTRATION.md](PREREGISTRATION.md) before any model was trained. Only methods from the course are used: linear and logistic regression, KNN, SVD, trees and ensembles. There are no pretrained embeddings, transformers, or language models anywhere in the results.
+
+## Results at a glance
+
+On the held-out test set (3,080 messages, scored once):
+
+- **Main model:** word + character TF-IDF with L2 logistic regression reaches **0.913 macro-F1** [0.901, 0.922]. That's **+0.287** over the strongest baseline, a keyword rule (0.626).
+- **Handoff:** with a threshold chosen on cross-validation and a 5 : 1 cost for a wrong answer vs a handoff, the model answers **85% of messages at 97% accuracy** and hands off the rest.
+
+| | Hypothesis | Verdict (CV and test) | Key evidence (test) |
+|---|---|---|---|
+| H1 | Errors come from overlapping intent definitions | **Supported** | 59.5% of errors fall inside confusable groups (19.8% expected by chance in CV). Merging the groups lifts accuracy 0.913 → 0.965. 66% of hand-labelled errors are ambiguous labels. |
+| H2 | Confidence-based handoff beats random handoff | **Supported** | Better at every coverage level from 50% to 95%. AURC 0.015 vs 0.087. |
+| H3 | The most accurate model is not the best calibrated | **Supported** | ECE 0.087 (L2, most accurate) vs 0.051 (L1). The CIs don't overlap. |
+| H4 | ≤ 300 SVD dimensions keep ≥ 90% of macro-F1 | **Supported** | 100 dimensions keep 93.9%. |
+| U | Confidence catches intents never seen in training (exploratory) | Mostly | AUROC 0.882. At k = 5, 68.5% of unseen-intent messages are handed off, vs 12.9% of seen ones. |
+
+**Takeaway:** most remaining errors come from the label set, not the model. So fix the overlapping intents first, and let confidence decide when to call a human.
 
 - **Live site:** https://semsem1313.github.io/banking77-intent-abstention/ (the main model runs in your browser; see [Website](#website))
 - **Data:** BANKING77 (Casanueva et al., 2020, arXiv:2003.04807), CC BY 4.0. It's downloaded from [PolyAI-LDN/task-specific-datasets](https://github.com/PolyAI-LDN/task-specific-datasets) at a pinned commit, with SHA-256 checks. There are 10,003 training and 3,080 test messages across 77 intents.
@@ -45,23 +62,34 @@ python -m venv .venv
 .venv/Scripts/python -m src.h1               # seconds (H1; creates reports/error_labels.csv for hand labels)
 .venv/Scripts/python -m src.experiments      # ~5 min (unseen-intent test, learning curves)
 .venv/Scripts/python -m src.evaluate_final --dry-run   # ~5 min; full rehearsal on fold 0, never opens test.csv
-.venv/Scripts/python -m src.evaluate_final   # run once, on frozen models
-.venv/Scripts/python -m src.export_web
+.venv/Scripts/python -m src.evaluate_final   # run once, on frozen models (refuses to run again; see reports/final/LOCK)
+.venv/Scripts/python -m src.export_web       # ~1 min; model + results for the website
 .venv/Scripts/python -m pytest               # ~30 s (39 tests)
 ```
 
-## Status
+- **Committed outputs:** the split (`data/processed/`) and every result file (`reports/`) are committed, so the numbers below can be checked without rerunning anything.
+- **The final evaluation has already run once.** It's locked, so rerunning it from this repo stops at the lock file. To reproduce it in a fresh clone, run the full sequence above.
+- **What the tests check:**
+  - no module except `evaluate_final.py` refers to the test file;
+  - the split is reproducible, and near-duplicate groups never straddle folds;
+  - out-of-fold predictions never train on the fold they predict, and TF-IDF is learned inside `fit`;
+  - the metrics, bootstrap, cost-threshold and H1 grouping logic;
+  - the website's tokenizer logic matches sklearn.
 
-| Step | State |
+## Repository layout
+
+| Path | Contents |
 |---|---|
-| Pre-registration, data download, split, tests | Done |
-| Baselines (B0 majority, B1 keyword rule, B2 random abstention) | Done |
-| Main model M1 (TF-IDF + logistic regression, L2 and L1), OOF probabilities | Done |
-| H2 abstention, H3 calibration (`src/analysis.py`) | Done (cross-validated) |
-| M2 KNN, M3 SVD + LR (H4), M4 random forest (`src/tune_more.py`); E1 error predictor (`src/error_predictor.py`) | Done (cross-validated) |
-| H1 error analysis (`src/h1.py`, including the author's 50 hand labels), unseen intents and learning curves (`src/experiments.py`) | Done |
-| **Final test-set run (`src/evaluate_final.py`), run once on commit `c21163f`** | **Done** |
-| Website (`docs/`, `src/export_web.py`), browser/Python parity check | Done |
+| `src/config.py` | Seeds and every pre-registered constant |
+| `src/download_data.py`, `src/split.py` | Pinned download; dedup, near-duplicate groups, folds, unseen-intent draw |
+| `src/features.py`, `src/models.py` | Shared tokenizer and TF-IDF; model definitions and grids |
+| `src/baselines.py`, `src/tune.py`, `src/tune_more.py` | B0–B2; M1 tuning (one-SE rule); KNN, SVD + LR, random forest |
+| `src/analysis.py`, `src/error_predictor.py`, `src/h1.py`, `src/experiments.py` | H2/H3; E1; H1; unseen intents and learning curves |
+| `src/evaluate_final.py` | The only reader of `test.csv`. Runs once. |
+| `src/export_web.py` | Exports the model and results for the site |
+| `reports/` | All results as JSON, out-of-fold probabilities, figures, hand labels (`error_labels.csv`), and the final run (`reports/final/`) |
+| `docs/` | The GitHub Pages site |
+| `tests/` | 39 tests |
 
 ## Final test-set results (3,080 messages, run once)
 
@@ -225,7 +253,7 @@ These are nested, stratified subsets of each training fold, with 5 draws per siz
 | Messages | 438 | 833 | 2,031 | 4,020 | 7,999 |
 | Macro-F1 | 0.624 | 0.727 | 0.826 | 0.869 | 0.900 |
 
-- With 5% of the data, the model matches the keyword rule trained on all of it.
+- With 5% of the data, the model roughly matches the keyword rule trained on all of it (0.624 vs 0.629).
 - The curve is still rising at 100%, so more labeled data would likely help.
 
 ## Website
@@ -255,9 +283,30 @@ The site in `docs/` is plain HTML, CSS, and JavaScript with Chart.js from a CDN.
 
   Then open http://localhost:8335.
 
+## Limitations
+
+- **Scope:** one dataset and one domain (a single bank, English only), and one intent per message. The results may not carry over to other banks, languages, or multi-intent messages.
+- **The test set is balanced** (40 messages per intent), unlike real traffic, where a few intents dominate.
+- **The cost ratio k is assumed**, not measured. That's why results are reported for k = 2, 5 and 10, and the site has a slider.
+- **The CV numbers are slightly optimistic,** because they were used for model selection. The single test-set run gives the unbiased figure.
+- **The bootstrap resamples messages, not near-duplicate groups.** This has little effect, since 98% of groups are single messages.
+- **H1's grouping chains** into one 29-intent group at the pre-registered threshold. Stricter thresholds are reported alongside it.
+- **The coarse categories and the 50 hand labels are the author's own judgements,** and 50 is a small sample. The 95% CI for the "ambiguous label" share is about 52–78%.
+- **The unseen-intent test is exploratory** and covers only the 10 intents drawn.
+- **Narrowed from the proposal:** a small neural network (MLP) and gradient boosting were dropped to meet the deadline. The random forest uses one fixed configuration rather than a tuned grid.
+- **Course methods only:** pretrained sentence encoders would likely score higher. They're left for future work, evaluated on the same split.
+
 ## AI-use disclosure
 
-Claude (Anthropic) was used for brainstorming, planning, and coding assistance. All results were checked by the author.
+Claude (Anthropic), used through Claude Code, assisted with brainstorming, planning, writing code, and drafting documentation and the website text.
+
+The author:
+- chose the research question and hypotheses;
+- reviewed and approved the pre-registration and each design decision;
+- hand-labelled the 50 errors for H1(b) and approved the coarse categories;
+- checked the results.
+
+No language model is used in any model, prediction, or result in this repository.
 
 ## Citations
 
