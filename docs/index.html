@@ -3,358 +3,447 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Banking Intent Handoff</title>
+  <title>Knowing When to Ask a Human</title>
   <meta name="description" content="Why classical intent classifiers fail on BANKING77, and when they should hand a customer message to a human. ES 335 course project.">
+  <script>try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
-<nav class="nav"><div class="wrap">
+<header class="bar"><div class="bar-in">
   <a class="brand" href="#top">Intent handoff</a>
-  <a href="#demo">Try it</a>
-  <a href="#data">Data</a>
-  <a href="#methods">Methods</a>
-  <a href="#evaluation">Evaluation</a>
-  <a href="#results">Results</a>
-  <a href="#h2">H2 Handoff</a>
-  <a href="#h3">H3 Calibration</a>
-  <a href="#h4">H4 SVD</a>
-  <a href="#h1">H1 Errors</a>
-  <a href="#unseen">Unseen</a>
-  <a href="#curve">Learning curve</a>
-  <a href="#limits">Limitations</a>
-  <a href="#reproduce">Reproduce</a>
-</div></nav>
+  <nav id="nav">
+    <a href="#demo">Try it</a>
+    <a href="#question">Question</a>
+    <a href="#data">Data</a>
+    <a href="#methods">Methods</a>
+    <a href="#evaluation">Evaluation</a>
+    <a href="#results">Results</a>
+    <a href="#h2">Handoff</a>
+    <a href="#h3">Calibration</a>
+    <a href="#h4">SVD</a>
+    <a href="#h1">Errors</a>
+    <a href="#unseen">Unseen</a>
+    <a href="#limits">Limitations</a>
+    <a href="#reproduce">Reproduce</a>
+  </nav>
+  <button class="icon-btn" id="theme" aria-label="Switch between light and dark theme" title="Light / dark">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18" /><path d="M12 7a5 5 0 0 1 0 10z" fill="currentColor" stroke="none"/></svg>
+  </button>
+</div></header>
 
-<main class="wrap" id="top">
+<main id="top">
 
-<header class="hero">
-  <div class="eyebrow">ES 335 · Machine Learning 2026 · Course project</div>
+<div class="col hero">
+  <p class="kicker">ES 335 Machine Learning · 2026 · Course project</p>
   <h1>Knowing when to ask a human</h1>
-  <p class="lede">A bank's chatbot has to sort each customer message into one of 77 intents. <strong>Why do classical
-    classifiers get some of these wrong, and when should they hand the message to a person instead of answering?</strong>
-    This study tests four pre-registered hypotheses on BANKING77, using only methods from the course.</p>
-  <div class="kpis">
-    <div class="kpi"><div class="v">0.913</div><div class="l">Test macro-F1 of TF-IDF + logistic regression, 95% CI [0.901, 0.922]</div></div>
-    <div class="kpi"><div class="v">+0.287</div><div class="l">Macro-F1 over the strongest baseline, a keyword rule (0.626)</div></div>
-    <div class="kpi"><div class="v">85% / 97%</div><div class="l">On the test set: share of messages answered, and accuracy on those, at a 5:1 error-to-handoff cost</div></div>
-    <div class="kpi"><div class="v">4 / 4</div><div class="l">Pre-registered hypotheses supported in cross-validation and confirmed on the single test run</div></div>
-  </div>
-</header>
+  <p class="lede">A bank's chatbot has to sort every customer message into one of 77 intents.
+    <strong>Why do classical classifiers get some wrong, and when should they hand the message to a person instead of answering?</strong>
+    Four hypotheses, written down before any model was trained, tested on BANKING77 with methods from the course only.</p>
+</div>
 
-<section id="question">
-  <h2><span class="num">1</span>The question</h2>
-  <p>A wrong answer from a support bot costs more than a polite "let me connect you to someone". So accuracy alone isn't
-    the right target. We also want to know <em>which</em> messages the model will get wrong, and whether its confidence
-    tells us in advance. The hypotheses were written down and committed before any model was trained
-    (<a href="https://github.com/semsem1313/banking77-intent-abstention/blob/main/PREREGISTRATION.md">PREREGISTRATION.md</a>):</p>
-  <div class="tablewrap"><table>
-    <thead><tr><th></th><th>Hypothesis</th><th>Result</th></tr></thead>
-    <tbody>
-      <tr><td><a href="#h1"><strong>H1</strong></a></td><td>Most errors come from overlapping intent definitions, not from a weak model.</td><td><span class="verdict yes">SUPPORTED</span></td></tr>
-      <tr><td><a href="#h2"><strong>H2</strong></a></td><td>Handing off the least confident messages beats handing off random ones, at every coverage level.</td><td><span class="verdict yes">SUPPORTED</span></td></tr>
-      <tr><td><a href="#h3"><strong>H3</strong></a></td><td>The most accurate model is not the best calibrated one.</td><td><span class="verdict yes">SUPPORTED</span></td></tr>
-      <tr><td><a href="#h4"><strong>H4</strong></a></td><td>A low-dimensional SVD (≤ 300 dimensions) keeps at least 90% of the full TF-IDF macro-F1.</td><td><span class="verdict yes">SUPPORTED</span></td></tr>
-      <tr><td><a href="#unseen"><strong>U</strong></a></td><td>Exploratory: can confidence catch messages from intents the model never saw?</td><td><span class="muted">Mostly (AUROC 0.88)</span></td></tr>
-    </tbody>
-  </table></div>
-</section>
+<div class="wide">
+  <dl class="headline">
+    <div><dt>0.913</dt><dd>macro-F1 on the held-out test set, scored once. 95% CI 0.901 to 0.922.</dd></div>
+    <div><dt>+0.287</dt><dd>over the strongest baseline, a keyword rule at 0.626.</dd></div>
+    <div><dt>85% at 97%</dt><dd>share of test messages answered, and accuracy on them, when a wrong answer costs 5× a handoff.</dd></div>
+    <div><dt>4 of 4</dt><dd>pre-registered hypotheses supported in cross-validation and again on the test set.</dd></div>
+  </dl>
+</div>
 
+<!-- ============ Live classifier ============ -->
 <section id="demo">
-  <h2><span class="num">2</span>Try the model</h2>
-  <p>This is the actual main model, trained on all 9,999 training messages and running in your browser: the same
-    vocabulary, IDF weights, and coefficients as the model scored on the test set. Nothing is sent to a server.</p>
-  <div class="card demo">
-    <textarea id="demo-input" aria-label="Customer message" placeholder="Type a banking question, e.g. my card still hasn't arrived">my card still hasn't arrived</textarea>
-    <div class="examples" id="demo-examples"><span class="small muted">Test-set examples:</span></div>
-    <div class="controls" style="margin-top:12px">
-      <label>Cost of a wrong answer vs a handoff
-        <select id="demo-k"><option value="2">2 : 1</option><option value="5" selected>5 : 1</option><option value="10">10 : 1</option></select>
-      </label>
-      <span class="small muted" id="demo-threshold"></span>
+  <div class="col">
+    <p class="kicker">Try it</p>
+    <h2>The model, running in your browser</h2>
+    <p>This is the model that was scored on the test set: the same vocabulary, IDF weights and coefficients, trained on all 9,999
+      training messages. Nothing leaves your device. Type a banking question, or load a real test-set message.</p>
+  </div>
+  <figure class="fig wide">
+    <div class="fig-body demo">
+      <textarea id="demo-input" rows="2" aria-label="Customer message" placeholder="my card still hasn't arrived" spellcheck="false">my card still hasn't arrived</textarea>
+      <div class="chips" id="demo-examples"><span class="lbl">Test-set messages</span></div>
+      <div id="demo-out"><p class="loading">Loading the model (about 4 MB)…</p></div>
     </div>
-    <div id="demo-out"><p class="loading">Loading model (about 4 MB)…</p></div>
+    <figcaption><b>Figure 1.</b> Word and character TF-IDF with L2 logistic regression. The handoff threshold for each cost ratio
+      was chosen on cross-validation, never on the test set. Green words push towards the predicted intent, red words push away.</figcaption>
+  </figure>
+</section>
+
+<!-- ============ Question ============ -->
+<section id="question">
+  <div class="col">
+    <p class="kicker">01 · Question</p>
+    <h2>A wrong answer costs more than asking for help</h2>
+    <p>A support bot that confidently answers the wrong question is worse than one that says "let me connect you to someone".
+      So accuracy alone is the wrong target. The useful questions are <em>which</em> messages the model gets wrong, <em>why</em>,
+      and whether its confidence warns us in advance.</p>
+    <p>The hypotheses, their pass criteria, the split rules and every constant were committed in
+      <a href="https://github.com/semsem1313/banking77-intent-abstention/blob/main/PREREGISTRATION.md">PREREGISTRATION.md</a>
+      before any model was trained.</p>
+    <ul class="hyps">
+      <li><a href="#h1">H1</a><span>Most errors come from overlapping intent definitions, not from a weak model.</span><span class="tag">Supported</span></li>
+      <li><a href="#h2">H2</a><span>Handing off the least confident messages beats handing off random ones, at every coverage level.</span><span class="tag">Supported</span></li>
+      <li><a href="#h3">H3</a><span>The most accurate model is not the best calibrated one.</span><span class="tag">Supported</span></li>
+      <li><a href="#h4">H4</a><span>At most 300 SVD dimensions keep at least 90% of the full TF-IDF macro-F1.</span><span class="tag">Supported</span></li>
+      <li><a href="#unseen">U</a><span>Exploratory: can confidence catch messages from intents the model never saw?</span><span class="tag neutral">Mostly</span></li>
+    </ul>
   </div>
 </section>
 
+<!-- ============ Data ============ -->
 <section id="data">
-  <h2><span class="num">3</span>Data</h2>
-  <p><strong>BANKING77</strong> (Casanueva et al., 2020): 13,083 short customer messages to a bank, each labelled with
-    one of 77 intents such as <code>card_arrival</code> or <code>exchange_rate</code>. There are 10,003 training and 3,080
-    test messages. Training intents have 35 to 187 examples each (median 127), and the test set has 40 per intent. The data is
-    downloaded at a pinned commit and checked with SHA-256, so every run sees the same bytes.</p>
-  <div class="grid2">
-    <div class="card">
-      <h3>Cleaning the training split</h3>
-      <ul class="small">
-        <li>4 exact duplicates removed, leaving <strong>9,999</strong> messages.</li>
-        <li><strong>153 near-duplicate pairs</strong> (TF-IDF cosine ≥ 0.90) are grouped, so a pair never straddles two folds.
-          Otherwise the model would "see" a held-out message during training and the CV score would be inflated.</li>
-        <li>10 intents are held out at random (seed 2026) for the unseen-intent test.</li>
-      </ul>
-    </div>
-    <div class="card">
-      <h3>A first hint of H1</h3>
-      <p class="small">Some near-duplicates carry <em>different</em> labels:</p>
-      <table class="small"><tbody>
+  <div class="col">
+    <p class="kicker">02 · Data</p>
+    <h2>13,083 short messages, 77 intents</h2>
+    <p><strong>BANKING77</strong> (Casanueva et al., 2020) contains customer messages to a bank, each labelled with one intent such as
+      <code>card_arrival</code> or <code>exchange_rate</code>. There are 10,003 training messages, with 35 to 187 per intent, and 3,080 test
+      messages, 40 per intent. The files are downloaded at a pinned commit and checked with SHA-256.</p>
+    <ul>
+      <li><strong>4 exact duplicates</strong> are removed, leaving 9,999 training messages.</li>
+      <li><strong>153 near-duplicate pairs</strong> (TF-IDF cosine ≥ 0.90) are grouped so a pair never straddles two folds. Otherwise the
+        model would effectively see a held-out message during training, and cross-validation would look better than it is.</li>
+      <li><strong>10 intents</strong> are held out at random for the unseen-intent test.</li>
+    </ul>
+    <h3>A first hint about the labels</h3>
+    <p>Some near-identical messages carry different labels. No model can get both of these right:</p>
+    <div class="tablewrap"><table>
+      <tbody>
         <tr><td>"has my top up gone through?"</td><td><code>pending_top_up</code></td></tr>
         <tr><td>"has my top-up gone through?"</td><td><code>top_up_reverted</code></td></tr>
         <tr><td>"how can i get new card?"</td><td><code>contactless_not_working</code></td></tr>
         <tr><td>"can i get a new card?"</td><td><code>order_physical_card</code></td></tr>
-      </tbody></table>
-      <p class="small muted" style="margin-top:8px">No model can get both of these right. The label set itself overlaps.</p>
-    </div>
+      </tbody>
+    </table></div>
   </div>
 </section>
 
+<!-- ============ Methods ============ -->
 <section id="methods">
-  <h2><span class="num">4</span>Features and methods</h2>
-  <h3>Preprocessing</h3>
-  <p>Text is lowercased and whitespace is collapsed. Two TF-IDF views are concatenated: <strong>word 1–2 grams</strong>
-    (words of 2+ characters) and <strong>character 3–5 grams inside word boundaries</strong>, which helps with typos
-    like "recieved". Term counts are damped with 1 + log(count), and each view is L2-normalised. Every learned step
-    (vocabulary, IDF, SVD, scaling) sits inside an sklearn <code>Pipeline</code>, so it is refit on the training folds only.</p>
-  <h3>Models</h3>
-  <div class="tablewrap"><table>
-    <thead><tr><th>ID</th><th>Model</th><th>Why it's here</th></tr></thead>
-    <tbody>
-      <tr><td>B0</td><td>Majority class</td><td>The floor.</td></tr>
-      <tr><td>B1</td><td>Keyword rule: each intent's top-k most distinctive words, highest overlap wins</td><td>What a hand-written bot would do. The strongest baseline (k = 20).</td></tr>
-      <tr><td>B2</td><td>Random abstention</td><td>The baseline for H2: hand off messages at random.</td></tr>
-      <tr><td><strong>M1</strong></td><td><strong>TF-IDF + logistic regression</strong>, L2 (softmax) and L1 (one-vs-rest)</td><td>Main model. L1 is the sparse, differently-calibrated comparison for H3.</td></tr>
-      <tr><td>M2</td><td>KNN, cosine distance, on TF-IDF and on SVD-300</td><td>A non-parametric family, for H1(c) and H3.</td></tr>
-      <tr><td>M3</td><td>Truncated SVD (LSA) + logistic regression, d = 25…1000</td><td>Tests H4.</td></tr>
-      <tr><td>M4</td><td>Random forest on SVD-300</td><td>A tree ensemble, for H1(c) and H3.</td></tr>
-      <tr><td>E1</td><td>Error predictor: logistic regression on max probability, margin, entropy, and length</td><td>Can a second model spot errors better than raw confidence?</td></tr>
-    </tbody>
-  </table></div>
-  <p class="small muted" style="margin-top:10px">Hyperparameters are chosen with the <strong>one-standard-error rule</strong>:
-    take the simplest setting whose CV score is within one standard error of the best. For M1 that gave word + char features with C = 10.
-    A small neural network and gradient boosting were planned as optional extras and dropped for time. Both are stated in Limitations.</p>
+  <div class="col">
+    <p class="kicker">03 · Preprocessing and methods</p>
+    <h2>Simple features, several model families</h2>
+    <p>Text is lowercased and whitespace is collapsed. Two TF-IDF views are concatenated: <strong>word 1–2 grams</strong> and
+      <strong>character 3–5 grams inside word boundaries</strong>, which tolerate typos like "recieved". Counts are damped with
+      1 + log(count), and each view is L2-normalised. Every learned step (vocabulary, IDF, SVD, scaling) sits inside an sklearn
+      <code>Pipeline</code>, so it is refit on the training folds only.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th></th><th>Model</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td>B0</td><td>Majority class</td><td>The floor.</td></tr>
+        <tr><td>B1</td><td>Keyword rule: each intent's most distinctive words, highest overlap wins</td><td>What a hand-written bot would do. Strongest baseline.</td></tr>
+        <tr><td>B2</td><td>Random abstention</td><td>The baseline for H2.</td></tr>
+        <tr><td><b>M1</b></td><td><b>TF-IDF + logistic regression</b>, L2 (softmax) and L1 (one-vs-rest)</td><td>Main model. L1 is the sparse comparison for H3.</td></tr>
+        <tr><td>M2</td><td>Cosine KNN, on TF-IDF and on SVD-300</td><td>A non-parametric family, for H1 and H3.</td></tr>
+        <tr><td>M3</td><td>Truncated SVD + logistic regression, 25 to 1,000 dimensions</td><td>Tests H4.</td></tr>
+        <tr><td>M4</td><td>Random forest on SVD-300</td><td>A tree ensemble, for H1 and H3.</td></tr>
+        <tr><td>E1</td><td>Logistic regression on max probability, margin, entropy and length</td><td>Can a second model spot errors better than raw confidence?</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Hyperparameters follow the one-standard-error rule: take the simplest setting whose cross-validated score is within one
+      standard error of the best. For the main model that gave word + character features with C = 10.</p>
+  </div>
 </section>
 
+<!-- ============ Evaluation ============ -->
 <section id="evaluation">
-  <h2><span class="num">5</span>Evaluation design</h2>
-  <div class="grid2">
-    <div>
-      <ul>
-        <li><strong>Pre-registered.</strong> Hypotheses, pass criteria, split rules, and constants were committed before training.
-          Two later changes were added as dated amendments, each before the numbers it affects were computed.</li>
-        <li><strong>5-fold StratifiedGroupKFold</strong> (stratified by intent, grouped by near-duplicate cluster).
-          Every tuning choice, threshold, and hypothesis decision uses <strong>out-of-fold</strong> predictions.</li>
-        <li><strong>The test set is opened once.</strong> Only one script may read it, a test enforces that, and a lock file
-          blocks a second run. It ran on commit <code>c21163f</code>, after a full dry run on a training fold.</li>
-      </ul>
-    </div>
-    <div>
-      <ul>
-        <li><strong>Macro-F1</strong> is the main metric, so all 77 intents count equally.</li>
-        <li><strong>95% bootstrap CIs</strong> (1,000 resamples) on every headline number. Model comparisons use <em>paired</em> bootstraps.</li>
-        <li><strong>Calibration:</strong> expected calibration error (ECE), 15 bins.</li>
-        <li><strong>Handoff:</strong> risk–coverage curves, their area (AURC), and an explicit cost: a wrong answer costs k, a handoff costs 1.</li>
-        <li><strong>Robustness:</strong> 5 fold seeds (SD 0.002) and a stricter near-duplicate grouping (−0.0008).</li>
-      </ul>
-    </div>
+  <div class="col">
+    <p class="kicker">04 · Evaluation design</p>
+    <h2>Decide on cross-validation, confirm once on the test set</h2>
   </div>
+  <div class="wide"><div class="two">
+    <ul>
+      <li><strong>Pre-registered.</strong> Two later changes were added as dated amendments, each before the numbers it affects were computed.</li>
+      <li><strong>5-fold StratifiedGroupKFold</strong>, stratified by intent and grouped by near-duplicate cluster. Every tuning choice,
+        threshold and hypothesis decision uses out-of-fold predictions.</li>
+      <li><strong>The test set was opened once.</strong> One script may read it, a test enforces that, and a lock file blocks a second run.
+        It ran on commit <code>c21163f</code> after a full dry run on a training fold.</li>
+    </ul>
+    <ul>
+      <li><strong>Macro-F1</strong> is the main metric, so all 77 intents count equally.</li>
+      <li><strong>95% bootstrap intervals</strong> (1,000 resamples) on every headline number, paired for model comparisons.</li>
+      <li><strong>Calibration</strong> is measured with expected calibration error, 15 bins.</li>
+      <li><strong>Handoff</strong> is measured with risk–coverage curves and an explicit cost: a wrong answer costs k, a handoff costs 1.</li>
+      <li><strong>Robustness:</strong> five fold seeds (SD 0.002) and a stricter near-duplicate grouping (−0.0008).</li>
+    </ul>
+  </div></div>
 </section>
 
+<!-- ============ Results ============ -->
 <section id="results">
-  <h2><span class="num">6</span>Results: how good are the models?</h2>
-  <p>Cross-validated (out-of-fold, 9,999 messages) and on the held-out test set (3,080 messages, run once).
-    The test score is slightly <em>higher</em> than CV. That's expected: the final model trains on all the training data
-    instead of 80% of it, and the learning curve predicts about that gain. Removing the 134 test messages that nearly
-    duplicate a training message changes test macro-F1 by only 0.002.</p>
-  <div class="card">
-    <div class="tablewrap"><table id="scores-table"></table></div>
+  <div class="col">
+    <p class="kicker">05 · Results</p>
+    <h2>A linear model on TF-IDF reaches 0.913</h2>
+    <p>Linear models win on this text. KNN and the random forest trail by six to seven points, and the keyword rule by almost thirty.
+      The ranking is the same in cross-validation and on the test set.</p>
   </div>
-  <div class="chart" id="scores-chart-wrap"><canvas id="scores-chart" aria-label="Macro-F1 by model"></canvas></div>
-</section>
-
-<section id="h2">
-  <h2><span class="num">7</span>H2: when to hand off <span class="verdict yes">SUPPORTED</span></h2>
-  <p>Rule: answer if the model's top probability is at least a threshold, otherwise hand off. Drag the threshold and see
-    what happens to how many messages get answered, how accurate those answers are, and the total cost. The
-    <strong>random line</strong> is what you'd get by handing off the same number of messages at random (B2). Its error never improves.</p>
-  <div class="card">
-    <div class="controls">
-      <div class="seg" id="h2-data"><button data-v="test" class="on">Test set</button><button data-v="cv">Cross-validation</button><button data-v="unseen">Unseen intents</button></div>
-      <label>Threshold <input type="range" id="h2-t" min="0" max="1" step="0.005" value="0.56"> <strong id="h2-t-val"></strong></label>
-      <label>Cost ratio k <input type="range" id="h2-k" min="1" max="20" step="1" value="5"> <strong id="h2-k-val"></strong></label>
-      <button class="btn" id="h2-best">Use the frozen CV threshold</button>
-    </div>
-    <div class="stats" id="h2-stats"></div>
-    <div class="grid2">
-      <div><div class="chart"><canvas id="h2-risk"></canvas></div></div>
-      <div><div class="chart"><canvas id="h2-cost"></canvas></div></div>
-    </div>
-    <p class="small muted" id="h2-note" style="margin-top:12px"></p>
-  </div>
-  <div class="grid2">
-    <div>
-      <h3>What the test shows</h3>
-      <p>At every pre-registered coverage level from 50% to 95%, the 95% CI of (confidence error − random error) is below
-        zero, in CV and on the test set. The area under the risk–coverage curve is <strong>0.018 vs 0.099</strong> for random (CV) and
-        <strong>0.015 vs 0.087</strong> on test.</p>
-      <p>The thresholds were chosen on CV only (0.228, 0.560, 0.685 for k = 2, 5, 10). On the test set each one lands within 0.01 of the best cost achievable there.</p>
-    </div>
-    <div>
-      <h3>Can a second model do better? (E1)</h3>
-      <div class="tablewrap"><table id="e1-table"></table></div>
-      <p class="small muted" style="margin-top:8px">E1 is slightly better and the CIs on the gain exclude zero, but most of the signal is already in the top probability.</p>
-    </div>
-  </div>
-</section>
-
-<section id="h3">
-  <h2><span class="num">8</span>H3: accurate is not the same as calibrated <span class="verdict yes">SUPPORTED</span></h2>
-  <p>A model is <em>calibrated</em> if, among messages where it says 80%, about 80% are right. Pick a model to see its
-    reliability diagram. Bars below the diagonal mean overconfident, bars above mean underconfident.</p>
-  <div class="card">
-    <div class="controls">
-      <label>Model <select id="h3-model"></select></label>
-      <div class="seg" id="h3-data"><button data-v="cv" class="on">Cross-validation</button><button data-v="test">Test set</button></div>
-    </div>
-    <div class="grid2">
-      <div><div class="chart"><canvas id="h3-chart"></canvas></div></div>
-      <div><div class="stats" id="h3-stats"></div><div class="tablewrap"><table id="h3-table" class="small"></table></div></div>
-    </div>
-  </div>
-  <p>The most accurate model (M1-L2) has an ECE of 0.107 in CV, about twice that of the L1 model (0.058), and the CIs don't overlap.
-    L2 is <strong>underconfident</strong>: it says 79% on average but is right 90% of the time. With 77 classes, an L2 penalty spreads
-    probability over many similar intents. That's harmless for ranking, which is why H2 still works, but it means the raw probability shouldn't be read
-    as a literal chance. The random forest is the extreme case (ECE 0.47): averaging 300 trees' votes over 77 classes flattens every probability.</p>
-</section>
-
-<section id="h4">
-  <h2><span class="num">9</span>H4: how many dimensions does the signal need? <span class="verdict yes">SUPPORTED</span></h2>
-  <p>Truncated SVD compresses ~37,000 TF-IDF features into d directions, fit on the training folds only. Then logistic regression is trained on those directions.</p>
-  <div class="card">
-    <div class="controls"><div class="seg" id="h4-data"><button data-v="cv" class="on">Cross-validation</button><button data-v="test">Test set</button></div></div>
-    <div class="chart"><canvas id="h4-chart"></canvas></div>
-  </div>
-  <p><strong>d = 100 keeps 93.8%</strong> of the full model's macro-F1 (93.9% on test), while explaining only 34% of the TF-IDF variance.
-    The intent signal lives in a few directions, and most of the variance is noise for this task. The full model is still best, so SVD is a compression, not an improvement.</p>
-</section>
-
-<section id="h1">
-  <h2><span class="num">10</span>H1: why the errors happen <span class="verdict yes">SUPPORTED</span></h2>
-  <p>Two intents are linked if the model confuses them at least 5 times (the pre-registered rule), and linked intents form
-    <strong>confusable groups</strong>. If errors were mostly caused by a weak model, they would be spread out. Instead they
-    concentrate inside these groups.</p>
-  <div class="card">
-    <div class="controls">
-      <label class="toggle"><input type="checkbox" id="h1-merge"> Merge the 9 confusable groups into single labels</label>
-      <div class="seg" id="h1-data"><button data-v="cv" class="on">Cross-validation</button><button data-v="test">Test set</button></div>
-    </div>
-    <div class="stats" id="h1-stats"></div>
-    <div class="grid2">
-      <div>
-        <div class="chart tall"><canvas id="h1-matrix" aria-label="Confusion matrix of errors"></canvas></div>
-        <p class="small muted">Errors only (the diagonal is hidden). Rows are the true intent, columns the prediction. Intents are ordered by group, so the dark blocks on the diagonal are the groups. Hover a cell for details.</p>
+  <figure class="fig wide">
+    <div class="fig-body">
+      <div class="scores" id="scores"></div>
+      <div class="keyrow">
+        <span class="key"><i style="background:var(--accent)"></i>Test set (3,080 messages, run once)</span>
+        <span class="key"><i style="border:2px solid var(--warm)"></i>Cross-validation (9,999 messages, out-of-fold)</span>
+        <span>Lines show 95% bootstrap intervals.</span>
       </div>
-      <div><div class="groups" id="h1-groups"></div></div>
     </div>
+    <figcaption><b>Figure 2.</b> Macro-F1 by model. Test scores sit slightly above cross-validation because the final models train on
+      all the training data rather than 80% of it. Removing the 134 test messages that nearly duplicate a training message changes the
+      main model's score by 0.002.</figcaption>
+  </figure>
+</section>
+
+<!-- ============ H2 ============ -->
+<section id="h2">
+  <div class="col">
+    <p class="kicker">06 · H2 <span class="tag">Supported</span></p>
+    <h2>Confidence knows which answers to hand off</h2>
+    <p>The rule is simple: answer when the top probability reaches a threshold, otherwise hand off. Move the threshold and watch what
+      happens to every hundred messages. The comparison is handing off the <em>same number</em> of messages at random, which
+      removes right and wrong answers alike.</p>
   </div>
-  <div class="grid2">
-    <div>
-      <h3>(a) Errors inside groups vs chance</h3>
-      <div class="tablewrap"><table id="h1-edge" class="small"></table></div>
-      <p class="small muted" style="margin-top:8px">Caveat, stated openly: at threshold 5, one group chains 29 intents through shared neighbours, and the share falls below half at stricter thresholds. At every threshold, though, errors fall inside groups far more often than chance.</p>
+  <figure class="fig wide">
+    <div class="fig-body">
+      <div class="controls">
+        <div class="seg" id="h2-data"><button data-v="test" class="on">Test set</button><button data-v="cv">Cross-validation</button><button data-v="unseen">Unseen intents</button></div>
+        <label>Threshold <input type="range" id="h2-t" min="0" max="1" step="0.005" value="0.56"><output id="h2-t-val"></output></label>
+        <label>A wrong answer costs <input type="range" id="h2-k" min="1" max="20" step="1" value="5"><output id="h2-k-val"></output></label>
+        <button class="link-btn" id="h2-best"></button>
+      </div>
+      <div class="stats" id="h2-stats"></div>
+      <div class="waffles" id="h2-waffles"></div>
+      <div class="split">
+        <div><p class="chart-title" id="h2-title-a"></p><div class="chart"><canvas id="h2-risk"></canvas></div></div>
+        <div><p class="chart-title" id="h2-title-b"></p><div class="chart"><canvas id="h2-cost"></canvas></div></div>
+      </div>
     </div>
-    <div>
-      <h3>(b) 50 errors, labelled by hand</h3>
-      <div class="chart" style="height:220px"><canvas id="h1-labels"></canvas></div>
-      <h3>(c) Different models, same mistakes</h3>
-      <p class="small">Of logistic regression's 10 most-confused pairs, <strong>6</strong> are also in KNN's top 10 and <strong>7</strong> in the random forest's.
-        Very different model families trip on the same pairs, which points at the labels rather than at any one model.</p>
-    </div>
+    <figcaption id="h2-note"></figcaption>
+  </figure>
+  <div class="col">
+    <p>At every pre-registered coverage level from 50% to 95%, the interval for (confidence error − random error) lies below zero,
+      in cross-validation and on the test set. The thresholds were frozen from cross-validation, and on the test set each lands within
+      0.01 of the best cost achievable there.</p>
+    <h3>Can a second model do better?</h3>
+    <p>E1 learns to predict errors from the main model's own confidence signals. It helps a little, and reliably, but most of the
+      signal is already in the top probability.</p>
+    <div class="tablewrap"><table id="e1-table"></table></div>
   </div>
 </section>
 
+<!-- ============ H3 ============ -->
+<section id="h3">
+  <div class="col">
+    <p class="kicker">07 · H3 <span class="tag">Supported</span></p>
+    <h2>The most accurate model is not the best calibrated</h2>
+    <p>A model is calibrated if, among messages where it says 80%, about 80% are right. Pick a model to see its reliability curve.
+      Points above the diagonal mean the model is less confident than it should be.</p>
+  </div>
+  <figure class="fig wide">
+    <div class="fig-body">
+      <div class="controls">
+        <div class="seg" id="h3-data"><button data-v="cv" class="on">Cross-validation</button><button data-v="test">Test set</button></div>
+      </div>
+      <div class="split">
+        <div><div class="chart"><canvas id="h3-chart"></canvas></div></div>
+        <div>
+          <div class="stats" id="h3-stats"></div>
+          <div class="picker" id="h3-picker"></div>
+        </div>
+      </div>
+    </div>
+    <figcaption><b>Figure 4.</b> Reliability by model. Dot size shows how many messages fall in each confidence bin, and grey
+      lines are the other models. Click a row to switch.</figcaption>
+  </figure>
+  <div class="col">
+    <p>The main model is right 90% of the time but says 79% on average. With 77 classes, an L2 penalty keeps the scores small, so
+      probability spreads across similar intents. That is harmless for ranking, which is why the handoff rule still works, but the raw
+      probability should not be read as a literal chance. The random forest is the extreme case: its probability is a vote share
+      spread over many intents.</p>
+  </div>
+</section>
+
+<!-- ============ H4 ============ -->
+<section id="h4">
+  <div class="col">
+    <p class="kicker">08 · H4 <span class="tag">Supported</span></p>
+    <h2>A hundred dimensions hold most of the signal</h2>
+    <p>Truncated SVD compresses about 37,000 TF-IDF features into d directions, fit on the training folds only. Logistic regression is
+      then trained on those directions.</p>
+  </div>
+  <figure class="fig wide">
+    <div class="fig-body">
+      <div class="controls">
+        <div class="seg" id="h4-data"><button data-v="cv" class="on">Cross-validation</button><button data-v="test">Test set</button></div>
+        <label>Dimensions <input type="range" id="h4-d" min="0" max="6" step="1" value="2"><output id="h4-d-val"></output></label>
+      </div>
+      <div class="stats" id="h4-stats"></div>
+      <div class="chart"><canvas id="h4-chart"></canvas></div>
+    </div>
+    <figcaption><b>Figure 5.</b> Share of the full model's macro-F1 kept at each SVD size. The pre-registered bar is 90% at 300
+      dimensions or fewer. Variance explained is shown for cross-validation.</figcaption>
+  </figure>
+  <div class="col">
+    <p>Variance is not usefulness. A hundred directions explain only a third of the TF-IDF variance yet keep 94% of the macro-F1,
+      because much of the variance is rare words that say little about intent. The full model is still best, so SVD is a
+      compression here, not an improvement.</p>
+  </div>
+</section>
+
+<!-- ============ H1 ============ -->
+<section id="h1">
+  <div class="col">
+    <p class="kicker">09 · Errors · H1 <span class="tag">Supported</span></p>
+    <h2>Most errors come from overlapping intents</h2>
+    <p>Link two intents if the model confuses them at least five times, and call each connected cluster a <strong>confusable
+      group</strong>. A weak model would scatter its errors. This one concentrates them inside the groups, and merging the groups
+      removes most of them.</p>
+  </div>
+  <figure class="fig wide">
+    <div class="fig-body">
+      <div class="controls">
+        <div class="seg" id="h1-data"><button data-v="cv" class="on">Cross-validation</button><button data-v="test">Test set</button></div>
+        <label>Link intents confused at least <input type="range" id="h1-edge" min="3" max="10" step="1" value="5"><output id="h1-edge-val"></output></label>
+        <label class="switch"><input type="checkbox" id="h1-merge">Merge each group into one label</label>
+      </div>
+      <div class="stats" id="h1-stats"></div>
+      <div class="split">
+        <div class="matrix-wrap"><canvas id="h1-matrix" aria-label="Confusion matrix of errors"></canvas><div class="tip" id="h1-tip"></div></div>
+        <div class="groups" id="h1-groups"></div>
+      </div>
+    </div>
+    <figcaption><b>Figure 6.</b> Errors only: rows are the true intent, columns the prediction, and the diagonal is hidden. Intents are
+      ordered so each group forms an outlined block. Groups are always built from cross-validation errors, then applied unchanged to the
+      test set. Five is the pre-registered threshold. Lower it and the groups chain together; raise it and they shrink, yet errors still
+      land inside them far more often than chance.</figcaption>
+  </figure>
+  <div class="col">
+    <p class="note">A caveat, stated openly: at the pre-registered threshold one group chains 29 intents through shared neighbours, and
+      the share of errors inside groups falls below half at stricter thresholds. The comparison with chance holds at every threshold.</p>
+    <h3>Fifty errors, labelled by hand</h3>
+    <p>The author read 50 randomly sampled errors and assigned each a cause.</p>
+    <div id="h1-labels"></div>
+    <h3>Different models, same mistakes</h3>
+    <p>If the labels are the problem, unrelated model families should trip on the same pairs. These are logistic regression's ten
+      most confused pairs, and whether each is also in the top ten of KNN and of the random forest.</p>
+    <div class="tablewrap"><table id="h1-pairs"></table></div>
+  </div>
+</section>
+
+<!-- ============ Unseen ============ -->
 <section id="unseen">
-  <h2><span class="num">11</span>Unseen intents (exploratory)</h2>
-  <p>Real customers ask things no intent covers. To simulate this, the main model was retrained on 67 intents with 10 held out
-    entirely, then shown messages from the missing 10. It has to pick a seen intent, so the only defence is low confidence.
-    Use the <a href="#h2" data-jump="unseen">Unseen intents</a> tab in the H2 slider to see the confidence distributions.</p>
-  <div class="card"><div class="tablewrap"><table id="unseen-table" class="small"></table></div></div>
-  <p>Mean confidence is 0.80 on seen intents vs 0.43 on unseen ones (AUROC 0.855 in CV, 0.882 on test). At k = 5, 70% of
-    unseen messages are handed off vs 16% of seen ones. The weak spot is an unseen intent with a close seen neighbour:
-    "wrong exchange rate for cash withdrawal" looks like "card payment wrong exchange rate", so only 35% of it is caught.</p>
-</section>
-
-<section id="curve">
-  <h2><span class="num">12</span>Learning curve: would more data help?</h2>
-  <div class="card">
-    <div class="controls">
-      <label>Training data <input type="range" id="lc-f" min="0" max="4" step="1" value="4"> <strong id="lc-f-val"></strong></label>
-    </div>
-    <div class="stats" id="lc-stats"></div>
-    <div class="chart"><canvas id="lc-chart"></canvas></div>
+  <div class="col">
+    <p class="kicker">10 · Unseen intents <span class="tag neutral">Exploratory</span></p>
+    <h2>Confidence catches most intents it has never seen</h2>
+    <p>Real customers ask things no intent covers. To simulate that, the main model was retrained on 67 intents and shown messages
+      from the 10 it never saw. It has to pick one of the intents it knows, so the only defence is low confidence. The
+      <a href="#h2" data-jump="unseen">Unseen intents tab</a> in the handoff figure shows both confidence distributions.</p>
   </div>
-  <p>Nested, stratified subsets with 5 random draws per size, scored on the same held-out folds (and on the test set with the full training data).
-    With just 5% of the data (about 440 messages) the model already matches the keyword rule trained on everything.
-    The curve is still rising at 100%, so more labelled data would likely help. Together with H1, though, the ceiling is set by the overlapping labels, not by data volume.</p>
+  <figure class="fig wide">
+    <div class="fig-body">
+      <div class="stats" id="unseen-stats"></div>
+      <div class="ubars" id="unseen-bars"></div>
+    </div>
+    <figcaption><b>Figure 7.</b> Share of each unseen intent's messages handed off at the threshold for a 5× cost, chosen on seen intents
+      only. Below each intent is what it is most often mistaken for. The weak spot is an unseen intent with a close seen neighbour.</figcaption>
+  </figure>
 </section>
 
+<!-- ============ Learning curve ============ -->
+<section id="curve">
+  <div class="col">
+    <p class="kicker">11 · Learning curve</p>
+    <h2>More data would still help</h2>
+    <p>Nested, stratified subsets of the training data, five random draws per size, scored on the same held-out folds and on the
+      test set.</p>
+  </div>
+  <figure class="fig wide">
+    <div class="fig-body">
+      <div class="controls">
+        <label>Training data used <input type="range" id="lc-f" min="0" max="4" step="1" value="4"><output id="lc-f-val"></output></label>
+      </div>
+      <div class="stats" id="lc-stats"></div>
+      <div class="chart"><canvas id="lc-chart"></canvas></div>
+    </div>
+    <figcaption><b>Figure 8.</b> With 5% of the data, about 440 messages, the model already roughly matches the keyword rule trained on
+      everything. The curve is still rising at 100%. Together with H1, though, the ceiling is set by overlapping labels as much as by
+      data volume.</figcaption>
+  </figure>
+</section>
+
+<!-- ============ Limitations ============ -->
 <section id="limits">
-  <h2><span class="num">13</span>Limitations</h2>
-  <ul>
-    <li><strong>One dataset, one domain, English only.</strong> Results may not carry over to other banks or languages.</li>
-    <li><strong>A balanced test set</strong> (40 per intent), unlike real traffic where a few intents dominate.</li>
-    <li><strong>One intent per message.</strong> Messages that really carry two requests are forced into one.</li>
-    <li><strong>The cost ratio k is assumed</strong>, not measured. That's why the slider lets you change it.</li>
-    <li><strong>The coarse groups and the 50 error labels are the author's own judgments</strong>, and 50 is a small sample (95% CI for "ambiguous label" ≈ 52–78%).</li>
-    <li><strong>The H1 grouping chains</strong> into one large group at the pre-registered threshold. Sensitivity thresholds are reported alongside it.</li>
-    <li><strong>The unseen-intent test covers only the 10 intents drawn</strong>, and is exploratory.</li>
-    <li><strong>Course methods only:</strong> no pretrained embeddings or transformers, which would likely score higher. A small MLP and gradient boosting were dropped for time.</li>
-  </ul>
+  <div class="col">
+    <p class="kicker">12 · Limitations</p>
+    <h2>What these results cannot claim</h2>
+    <ul>
+      <li><strong>One dataset, one bank, English only.</strong> The results may not carry over to other domains or languages.</li>
+      <li><strong>A balanced test set</strong>, 40 messages per intent, unlike real traffic where a few intents dominate.</li>
+      <li><strong>One intent per message.</strong> Messages with two requests are forced into one label.</li>
+      <li><strong>The cost ratio is assumed</strong>, not measured, which is why the handoff figure lets you change it.</li>
+      <li><strong>The 50 error labels and the coarse categories are the author's own judgement</strong>, and 50 is a small sample: the
+        95% interval for "ambiguous label" is roughly 52% to 78%.</li>
+      <li><strong>The H1 grouping chains</strong> into one large group at the pre-registered threshold.</li>
+      <li><strong>The unseen-intent test covers only the 10 intents drawn</strong>, and is exploratory.</li>
+      <li><strong>Narrowed from the proposal:</strong> a small neural network and gradient boosting were dropped to meet the deadline,
+        and the random forest uses one fixed configuration.</li>
+      <li><strong>Course methods only.</strong> Pretrained sentence encoders would likely score higher.</li>
+    </ul>
+  </div>
 </section>
 
+<!-- ============ Conclusion ============ -->
 <section id="conclusion">
-  <h2><span class="num">14</span>Conclusion</h2>
-  <p>A well-tuned linear model on TF-IDF gets 0.913 macro-F1 on BANKING77, far above a keyword bot. Its remaining errors are
-    mostly not "the model is too weak": they concentrate in groups of intents whose definitions overlap, and merging
-    those groups lifts accuracy from 91% to 96.5%. The model's confidence, although underconfident in absolute terms, ranks
-    its own mistakes well. A threshold chosen in cross-validation answered 85% of test messages at 97% accuracy and
-    handed off most messages from intents it had never seen. The practical advice: <strong>fix the label set first, and let
-    confidence decide when to call a human.</strong></p>
+  <div class="col">
+    <p class="kicker">13 · Conclusion</p>
+    <h2>Fix the labels first, then let confidence decide</h2>
+    <p>A well-tuned linear model on TF-IDF reaches 0.913 macro-F1 on BANKING77, far above a keyword bot. What remains is mostly
+      not a weak model: the errors concentrate in groups of intents whose definitions overlap, and merging those groups lifts
+      accuracy from 91% to 96.5%.</p>
+    <p>The model's confidence is too low in absolute terms, yet it ranks its own mistakes well. A threshold chosen in
+      cross-validation answered 85% of test messages at 97% accuracy, and handed off most messages from intents the model had
+      never seen.</p>
+  </div>
 </section>
 
+<!-- ============ Reproduce ============ -->
 <section id="reproduce">
-  <h2><span class="num">15</span>Reproduce</h2>
-  <p>Code, pre-registration, and every result file: <a href="https://github.com/semsem1313/banking77-intent-abstention">github.com/semsem1313/banking77-intent-abstention</a>.</p>
+  <div class="col">
+    <p class="kicker">14 · Reproduce</p>
+    <h2>Every number here can be rerun</h2>
+    <p>Code, pre-registration and all result files are at
+      <a href="https://github.com/semsem1313/banking77-intent-abstention">github.com/semsem1313/banking77-intent-abstention</a>.</p>
 <pre><code>python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt
-.venv/Scripts/python -m src.download_data    # pinned commit + SHA-256 check
+.venv/Scripts/python -m src.download_data    # pinned commit, SHA-256 check
 .venv/Scripts/python -m src.split            # dedup, near-duplicate groups, folds
 .venv/Scripts/python -m src.baselines
-.venv/Scripts/python -m src.tune             # M1 grid, one-SE rule
-.venv/Scripts/python -m src.tune_more        # KNN, SVD + LR, random forest, H4
-.venv/Scripts/python -m src.error_predictor  # E1
+.venv/Scripts/python -m src.tune             # main model, one-SE rule
+.venv/Scripts/python -m src.tune_more        # KNN, SVD + LR, random forest
+.venv/Scripts/python -m src.error_predictor
 .venv/Scripts/python -m src.analysis         # H2, H3
 .venv/Scripts/python -m src.h1               # H1
 .venv/Scripts/python -m src.experiments      # unseen intents, learning curves
-.venv/Scripts/python -m src.evaluate_final   # the single test-set run (locked after it runs)
-.venv/Scripts/python -m src.export_web       # model + results for this page
+.venv/Scripts/python -m src.evaluate_final   # the single test run, locked afterwards
+.venv/Scripts/python -m src.export_web       # model and results for this page
 .venv/Scripts/python -m pytest</code></pre>
-  <p class="small muted">The in-browser model is checked against Python on 500 messages: <a href="parity.html">run the parity check</a>.</p>
+    <p class="small muted">The in-browser model is checked against Python on 500 messages. <a href="parity.html">Run the parity check</a>.</p>
+  </div>
 </section>
 
 </main>
 
-<footer><div class="wrap">
-  <p><strong>Data:</strong> BANKING77, Casanueva, I., Temčinas, T., Gerz, D., Henderson, M., &amp; Vulić, I. (2020).
+<footer><div class="col">
+  <p><strong>Data.</strong> BANKING77: Casanueva, I., Temčinas, T., Gerz, D., Henderson, M., &amp; Vulić, I. (2020).
     <em>Efficient Intent Detection with Dual Sentence Encoders.</em> NLP for ConvAI workshop, ACL. CC BY 4.0.</p>
-  <p><strong>AI-use disclosure:</strong> Claude (Anthropic) was used for brainstorming, planning, and coding assistance.
-    All results were checked by the author. No language model is used in any result or in the model on this page.</p>
+  <p><strong>AI-use disclosure.</strong> Claude (Anthropic) assisted with brainstorming, planning, code and drafting. The author chose the
+    question and hypotheses, labelled the errors, and checked the results. No language model is used in any result or in the model on this page.</p>
   <p>ES 335 Machine Learning, 2026.</p>
 </div></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="js/model.js?v=2"></script>
-<script src="js/app.js?v=2"></script>
+<script src="js/model.js?v=3"></script>
+<script src="js/app.js?v=3"></script>
 </body>
 </html>

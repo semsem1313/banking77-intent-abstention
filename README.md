@@ -262,11 +262,13 @@ The site in `docs/` is plain HTML, CSS, and JavaScript with Chart.js from a CDN.
 
 - **Live classifier:** the main model (M1-L2, fit on all 9,999 training messages) runs in the browser. It's the same model scored on the test set; its test probabilities match the frozen run to 3e-8. It shows the top 3 intents, the words that pushed the prediction, and the handoff decision at the chosen cost ratio.
 - **Interactive figures:**
-  - H2 threshold and cost slider: CV, test, and unseen-intent modes, with the random-abstention line;
-  - H3 reliability by model;
-  - H4 SVD curve;
-  - H1 merge toggle on an error confusion matrix;
-  - learning-curve slider.
+  - **Scores:** every model's macro-F1 with its 95% interval, for CV and test.
+  - **H2 handoff:** threshold and cost sliders with CV, test, and unseen-intent modes. Dot grids show what happens to every 100 messages under the confidence rule vs random handoff, next to the risk–coverage and cost curves.
+  - **H3 calibration:** click a model to see its reliability curve against the others.
+  - **H4 SVD:** a dimension slider with macro-F1 kept vs variance explained.
+  - **H1 errors:** an error confusion matrix with a merge toggle and a link-threshold slider. The slider rebuilds the confusable groups in the browser with the same rule as `src/h1.py`, and its numbers match `reports/h1.json` at thresholds 3, 5, 8 and 10.
+  - **Learning curve:** a training-size slider.
+  - A light/dark theme toggle.
 - **Export:** `src/export_web.py` writes these files to `docs/assets/`:
   - `model.json`: vocabulary, IDF, intercepts;
   - `weights.bin`: int8 weights with one scale per feature, 2.9 MB instead of 11 MB as float32. On 500 messages the top intent agrees 100% with the float model;

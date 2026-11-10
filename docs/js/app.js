@@ -1,5 +1,5 @@
-/* Page logic: live classifier, H2 slider, H3 picker, H4 chart, H1 merge view, learning curve.
- * All numbers come from assets/results.json (written by src/export_web.py); nothing is computed on a server. */
+/* Page logic. Every number comes from assets/results.json (written by src/export_web.py);
+ * the live classifier uses js/model.js. Nothing is sent to a server. */
 (function () {
   "use strict";
 
@@ -7,17 +7,23 @@
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const pct = (x, d = 1) => (100 * x).toFixed(d) + "%";
   const f3 = (x) => Number(x).toFixed(3);
-  const ci = (c) => `[${f3(c[0])}, ${f3(c[1])}]`;
+  const ci = (c) => `${f3(c[0])} to ${f3(c[1])}`;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const pretty = (intent) => intent.replace(/_/g, " ").replace(/\?$/, "");
+  const pretty = (s) => s.replace(/_/g, " ").replace(/\?$/, "");
 
-  let R = null;            // results.json
-  const renderers = [];    // re-run when the colour scheme changes
+  let R = null;              // results.json
+  const redraw = [];         // re-run when the colour theme changes
   const charts = {};
 
-  // Update an existing chart in place instead of destroying it. Destroying and recreating a chart
-  // on every slider tick, while the previous one was still animating, crashed Chart.js's shared
-  // animation loop ("this._fn is not a function") and blanked every chart on the page.
+  // Translucent version of a #rrggbb token, as rgba() so canvases and Chart.js can parse it.
+  function alpha(color, a) {
+    const h = color.replace("#", "");
+    const n = parseInt(h.length === 3 ? h.split("").map((x) => x + x).join("") : h, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a.toFixed(3)})`;
+  }
+
+  // Charts are updated in place. Destroying and recreating one on every slider tick crashed
+  // Chart.js's shared animation loop and blanked every chart on the page.
   function chart(id, config) {
     const c = charts[id];
     if (c && c.config.type === config.type) {
@@ -32,21 +38,34 @@
   }
 
   function theme() {
-    Chart.defaults.color = css("--muted");
-    Chart.defaults.borderColor = css("--grid");
-    Chart.defaults.font.family = css("--sans");
-    Chart.defaults.font.size = 12;
-    Chart.defaults.plugins.legend.labels.boxWidth = 12;
-    Chart.defaults.animation = false;      // sliders redraw on every tick; animation only adds lag
-    Chart.defaults.maintainAspectRatio = false;
+    const d = Chart.defaults;
+    d.color = css("--muted");
+    d.borderColor = css("--line");
+    d.font.family = css("--sans");
+    d.font.size = 12;
+    d.animation = false;
+    d.maintainAspectRatio = false;
+    d.elements.line.borderWidth = 2;
+    d.elements.point.hitRadius = 8;
+    d.plugins.legend.position = "bottom";
+    d.plugins.legend.align = "start";
+    d.plugins.legend.labels.usePointStyle = true;
+    d.plugins.legend.labels.pointStyle = "line";
+    d.plugins.legend.labels.boxWidth = 22;
+    d.plugins.legend.labels.padding = 16;
+    d.plugins.legend.labels.filter = (item, data) => data.datasets[item.datasetIndex].inLegend !== false;
+    d.plugins.legend.onClick = null;
+    const t = d.plugins.tooltip;
+    t.backgroundColor = css("--text"); t.titleColor = css("--bg"); t.bodyColor = css("--bg");
+    t.padding = 10; t.cornerRadius = 8; t.displayColors = false; t.titleFont = { weight: "600" };
   }
-  const S = (i) => css(`--series-${i}`);
-  // Translucent version of a #rrggbb token, as rgba() so every canvas and Chart.js can parse it.
-  const alpha = (color, a) => {
-    const h = color.replace("#", "");
-    const n = parseInt(h.length === 3 ? h.split("").map((x) => x + x).join("") : h, 16);
-    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a.toFixed(3)})`;
-  };
+  // Axis with a title, faint grid and no border line.
+  const ax = (title, extra = {}) => ({
+    title: { display: !!title, text: title, color: css("--muted"), font: { size: 12 } },
+    grid: { color: css("--line"), drawTicks: false }, border: { display: false },
+    ...extra, ticks: { padding: 8, maxTicksLimit: 7, ...(extra.ticks || {}) },
+  });
+  const pctTick = { callback: (x) => pct(x, 0) };
 
   function seg(id, onChange) {
     const el = document.getElementById(id);
@@ -61,116 +80,123 @@
       set: (v) => { el.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.v === v)); onChange(v); },
     };
   }
-
   function stats(el, items) {
-    el.innerHTML = items.map(([v, l]) => `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+    el.innerHTML = items.map(([v, l, cls]) => `<div><b class="${cls || ""}">${v}</b><span>${l}</span></div>`).join("");
   }
 
-  // ---------- 1. Live classifier ----------
-
-  function groupOf(intent) {
-    return R.h1.groups.find((g) => g.includes(intent));
-  }
+  // ---------- Figure 1: live classifier ----------
 
   function initDemo() {
-    const input = $("#demo-input"), out = $("#demo-out"), kSel = $("#demo-k");
-    const thr = () => R.slider.frozen_thresholds.find((t) => String(t.k) === kSel.value).threshold;
-    const ex = $("#demo-examples");
-    let truth = null;
+    const input = $("#demo-input"), out = $("#demo-out"), ex = $("#demo-examples");
+    let k = 5, truth = null, model = null;
+    const thr = () => R.slider.frozen_thresholds.find((t) => t.k === k).threshold;
+    const groupOf = (intent) => R.h1.groups.find((g) => g.includes(intent));
+
     for (const kind of ["clear", "ambiguous", "misclassified"]) {
       for (const e of R.examples[kind].slice(0, 2)) {
         const b = document.createElement("button");
         b.className = `chip ${kind}`;
-        b.innerHTML = `<span class="tag">${kind}</span>${esc(e.text)}`;
-        b.title = `True label: ${e.label}`;
+        b.innerHTML = `<i></i>${esc(e.text)}`;
+        b.title = `${kind} · true label: ${e.label}`;
         b.onclick = () => { input.value = e.text; truth = e; run(); };
         ex.appendChild(b);
       }
     }
-    let model = null;
     IntentModel.load("assets/").then((m) => { model = m; run(); })
-      .catch((e) => { out.innerHTML = `<p class="muted">Could not load the model: ${esc(e)}</p>`; });
+      .catch((e) => { out.innerHTML = `<p class="loading">Could not load the model: ${esc(e)}</p>`; });
 
     function run() {
-      $("#demo-threshold").textContent = `Hand off when the top probability is below ${thr().toFixed(3)} (chosen on cross-validation for this cost).`;
       if (!model) return;
       const text = input.value;
-      if (!normalizeText(text)) { out.innerHTML = `<p class="muted">Type a message above.</p>`; return; }
+      if (!normalizeText(text)) { out.innerHTML = `<p class="loading">Type a message above.</p>`; return; }
       const r = model.predict(text);
-      const top = model.classes[r.top], p = r.proba[r.top];
-      const answer = p >= thr();
-      const bars = r.order.slice(0, 3).map((i) => `<div class="bar"><span class="name" title="${esc(model.classes[i])}">${esc(model.classes[i])}</span>
-          <span class="track"><span class="fill" style="width:${(100 * r.proba[i]).toFixed(1)}%"></span></span><span class="pct">${pct(r.proba[i])}</span></div>`).join("");
+      const top = model.classes[r.top], p = r.proba[r.top], t = thr(), answer = p >= t;
+      const ranks = r.order.slice(0, 3).map((i) => `<div class="rank"><span class="name" title="${esc(model.classes[i])}">${esc(model.classes[i])}</span>
+        <span class="p">${pct(r.proba[i])}</span><span class="barline"><i style="width:${(100 * r.proba[i]).toFixed(1)}%"></i></span></div>`).join("");
       const maxAbs = Math.max(1e-9, ...r.wordScore.map(Math.abs));
       const hl = r.words.map((w, i) => {
         const s = r.wordScore[i] / maxAbs;
-        const bg = s >= 0 ? alpha(css("--good"), 0.55 * s) : alpha(css("--bad"), 0.55 * -s);
+        const bg = s >= 0 ? alpha(css("--good"), 0.42 * s) : alpha(css("--bad"), 0.42 * -s);
         return `<span style="background:${bg}" title="contribution ${r.wordScore[i].toFixed(3)}">${esc(w)}</span>`;
       }).join(" ");
       const feats = r.contrib.filter((c) => c.value > 0).slice(0, 8).map((c) =>
-        `<span class="feat" title="${c.label.kind} feature, +${c.value.toFixed(3)}">${c.label.kind === "char" ? esc(c.label.text.replace(/ /g, "␣")) : esc(c.label.text)}</span>`).join("");
+        `<span class="feat" title="${c.label.kind} n-gram, +${c.value.toFixed(3)}">${esc(c.label.kind === "char" ? c.label.text.replace(/ /g, "␣") : c.label.text)}</span>`).join("");
       const g = groupOf(top);
+      const others = g ? g.filter((x) => x !== top) : [];
       const truthNote = truth && normalizeText(text) === normalizeText(truth.text)
-        ? `<p class="small">True label (from the test set): <code>${esc(truth.label)}</code> ${truth.label === top ? "✓ the model is right" : "✗ the model is wrong here"}</p>` : "";
-      out.innerHTML = `
-        <div class="decision ${answer ? "answer" : "handoff"}">${answer ? "Answer automatically" : "Hand off to a human"}
-          <span class="why">top probability ${pct(p)} is ${answer ? "at or above" : "below"} the threshold ${pct(thr())}</span></div>
-        ${truthNote}
-        <h3>Top 3 intents</h3><div class="bars">${bars}</div>
-        <h3>Which words pushed it towards <code>${esc(top)}</code></h3>
-        <div class="highlight">${hl}</div>
-        <p class="small muted">Green words raise this intent's score relative to the average intent, red words lower it. Strongest features
-          (␣ marks a word edge in a character n-gram):</p>
-        <div class="feats">${feats || '<span class="muted small">none of the words are in the vocabulary</span>'}</div>
-        ${g ? `<p class="groupnote">⚠ <code>${esc(top)}</code> is in a confusable group (H1) with ${g.length - 1} other intent${g.length > 2 ? "s" : ""}${g.length <= 8 ? ": " + g.filter((x) => x !== top).map((x) => `<code>${esc(x)}</code>`).join(", ") : ""}. These are the intents it most often mixes up.</p>` : ""}`;
+        ? `<p class="groupnote">True label in the test set: <code>${esc(truth.label)}</code>. ${truth.label === top ? "The model is right." : "<b>The model is wrong here.</b>"}</p>` : "";
+      out.innerHTML = `<div class="demo-grid">
+        <div>
+          <p class="verdict ${answer ? "answer" : "handoff"}">${answer ? "Answer automatically" : "Hand off to a human"}</p>
+          <p class="small muted" style="margin:0">Top probability ${pct(p)} is ${answer ? "at or above" : "below"} the threshold.</p>
+          <div class="meter"><div class="track"><div class="fill" style="width:${(100 * p).toFixed(1)}%"></div></div>
+            <div class="tick" style="left:${(100 * t).toFixed(1)}%"><span>threshold ${pct(t, 0)}</span></div></div>
+          <div class="ctl" style="margin-top:14px">A wrong answer costs
+            <div class="seg" id="demo-k">${[2, 5, 10].map((v) => `<button data-v="${v}" class="${v === k ? "on" : ""}">${v}×</button>`).join("")}</div>a handoff</div>
+          ${truthNote}
+          <p class="sub">Top three intents</p>${ranks}
+        </div>
+        <div>
+          <p class="sub">Why <code>${esc(top)}</code></p>
+          <p class="hl">${hl}</p>
+          <p class="sub">Strongest features</p>
+          <div class="feats">${feats || '<span class="muted small">None of these words are in the vocabulary.</span>'}</div>
+          <p class="groupnote">Word and character n-grams that raise this intent most. ␣ marks a word edge.</p>
+          ${g ? `<p class="groupnote"><b style="color:var(--amber)">Confusable intent.</b> <code>${esc(top)}</code> shares a group with ${others.length} other intent${others.length > 1 ? "s" : ""}${others.length <= 6 ? ": " + others.map((x) => `<code>${esc(x)}</code>`).join(" ") : ""}. See <a href="#h1">H1</a>.</p>` : ""}
+        </div></div>`;
+      $("#demo-k").addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (b) { k = +b.dataset.v; run(); }
+      });
     }
     let timer;
-    input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 120); });
-    kSel.addEventListener("change", run);
-    run();
+    input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 100); });
+    redraw.push(run);
   }
 
-  // ---------- 6. Scores ----------
+  // ---------- Figure 2: scores with intervals ----------
 
   function renderScores() {
-    const rows = R.scores;
-    $("#scores-table").innerHTML = `<thead><tr><th>Model</th><th class="n">CV macro-F1 [95% CI]</th><th class="n">Test macro-F1 [95% CI]</th><th class="n">Test accuracy</th></tr></thead><tbody>` +
-      rows.map((r) => `<tr class="${r.id === "M1_L2" ? "hl" : ""}"><td>${r.id.startsWith("B") ? "Baseline: " : ""}${esc(r.name)}</td>
-        <td class="n">${f3(r.cv.macro_f1)} ${ci(r.cv.ci)}</td><td class="n">${f3(r.test.macro_f1)} ${ci(r.test.ci)}</td><td class="n">${f3(r.test.accuracy)}</td></tr>`).join("") + "</tbody>";
-    const shown = rows.filter((r) => r.id !== "B0_majority").sort((a, b) => b.test.macro_f1 - a.test.macro_f1);
-    chart("scores-chart", {
-      type: "bar",
-      data: { labels: shown.map((r) => r.name), datasets: [
-        { label: "Cross-validation", data: shown.map((r) => r.cv.macro_f1), backgroundColor: S(2) },
-        { label: "Test set", data: shown.map((r) => r.test.macro_f1), backgroundColor: S(1) }] },
-      options: { indexAxis: "y", scales: { x: { min: 0.5, max: 1, title: { display: true, text: "Macro-F1" } } },
-        plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${f3(c.raw)}` } } } },
-    });
+    const lo = 0.5, hi = 1.0, pos = (x) => (100 * (Math.min(hi, Math.max(lo, x)) - lo)) / (hi - lo);
+    const rows = R.scores.filter((r) => r.id !== "B0_majority").sort((a, b) => b.test.macro_f1 - a.test.macro_f1);
+    const ticks = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+    const grid = ticks.map((t) => `<i class="gridl" style="left:${pos(t)}%"></i>`).join("");
+    const iv = (r) => `<div class="iv">${grid}
+      <i class="ci cv" style="left:${pos(r.cv.ci[0])}%;width:${pos(r.cv.ci[1]) - pos(r.cv.ci[0])}%"></i><i class="dot cv" style="left:${pos(r.cv.macro_f1)}%"></i>
+      <i class="ci te" style="left:${pos(r.test.ci[0])}%;width:${pos(r.test.ci[1]) - pos(r.test.ci[0])}%"></i><i class="dot te" style="left:${pos(r.test.macro_f1)}%"></i></div>`;
+    const b0 = R.scores.find((r) => r.id === "B0_majority");
+    $("#scores").innerHTML =
+      `<span class="h">Model</span><span class="h ivh">Macro-F1</span><span class="h v">CV</span><span class="h v">Test</span>` +
+      rows.map((r) => `<span class="rule"></span>
+        <span class="name ${r.id === "M1_L2" ? "main" : ""}">${esc(r.name)}${r.id === "M1_L2" ? "<small>main model</small>" : r.id.startsWith("B") ? "<small>baseline</small>" : ""}</span>
+        ${iv(r)}<span class="v">${f3(r.cv.macro_f1)}</span><span class="v ${r.id === "M1_L2" ? "main" : ""}">${f3(r.test.macro_f1)}</span>`).join("") +
+      `<span class="rule"></span><span class="axpad"></span><div class="axis">${ticks.map((t) => `<span style="left:${pos(t)}%">${t.toFixed(1)}</span>`).join("")}</div><span></span><span></span>
+       <span class="rule"></span><span class="name">${esc(b0.name)}<small>baseline, off the scale</small></span><span class="iv"></span><span class="v">${f3(b0.cv.macro_f1)}</span><span class="v">${f3(b0.test.macro_f1)}</span>`;
   }
 
-  // ---------- 7. H2 slider ----------
+  // ---------- Figure 3: H2 handoff ----------
 
   function prepare(conf, correct) {
     const idx = conf.map((_, i) => i).sort((a, b) => conf[b] - conf[a]);
-    const c = idx.map((i) => conf[i]), w = idx.map((i) => 1 - correct[i]);
+    const c = idx.map((i) => conf[i]);
     const cumW = [0];
-    for (const x of w) cumW.push(cumW[cumW.length - 1] + x);
+    for (const i of idx) cumW.push(cumW[cumW.length - 1] + (1 - correct[i]));
     return { conf: c, cumW, n: c.length, err: cumW[c.length] / c.length };
   }
-  // Number of messages with conf >= t (conf sorted descending).
-  function answeredCount(d, t) {
-    let lo = 0, hi = d.n;
-    while (lo < hi) { const m = (lo + hi) >> 1; if (d.conf[m] >= t) lo = m + 1; else hi = m; }
+  // Number of messages with confidence >= t, for confidences sorted descending.
+  function answeredCount(conf, t) {
+    let lo = 0, hi = conf.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (conf[m] >= t) lo = m + 1; else hi = m; }
     return lo;
   }
   function at(d, t, k) {
-    const m = answeredCount(d, t), wrong = d.cumW[m];
-    return { m, coverage: m / d.n, acc: m ? 1 - wrong / m : NaN, cost: (k * wrong + (d.n - m)) / d.n,
-             randomCost: (k * d.err * m + (d.n - m)) / d.n, answerAll: k * d.err };
+    const m = answeredCount(d.conf, t), wrong = d.cumW[m], cov = m / d.n;
+    return { m, cov, wrong, acc: m ? 1 - wrong / m : NaN, cost: (k * wrong + (d.n - m)) / d.n,
+             randomCost: k * d.err * cov + (1 - cov), answerAll: k * d.err };
   }
-  // Same rule as src/analysis.py cost_threshold: cut only between distinct confidence values.
+  // Same rule as src/analysis.py cost_threshold: only cut between distinct confidence values.
   function bestThreshold(d, k) {
-    let best = { cost: 1, t: 1.0 };   // answer nothing
+    let best = { cost: 1, t: 1.0 };
     for (let m = 1; m <= d.n; m++) {
       if (m < d.n && d.conf[m - 1] === d.conf[m]) continue;
       const cost = (k * d.cumW[m] + (d.n - m)) / d.n;
@@ -178,72 +204,101 @@
     }
     return best.t;
   }
+  // Split 100 dots across shares (largest-remainder rounding).
+  function allot(shares, n = 100) {
+    const raw = shares.map((s) => s * n), base = raw.map(Math.floor);
+    let left = n - base.reduce((a, b) => a + b, 0);
+    raw.map((x, i) => [x - base[i], i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (left-- > 0) base[i]++; });
+    return base;
+  }
+  function waffle(title, sub, shares, classes) {
+    const counts = allot(shares);
+    const dots = counts.map((c, i) => `<i class="${classes[i]}"></i>`.repeat(c)).join("");
+    return `<div class="waffle"><h4>${title}</h4><p>${sub}</p><div class="dots">${dots}</div></div>`;
+  }
 
   function initH2() {
     const D = { test: prepare(R.slider.test.conf, R.slider.test.correct), cv: prepare(R.slider.cv.conf, R.slider.cv.correct) };
     const U = { seen: R.slider.unseen.seen.slice().sort((a, b) => b - a), unseen: R.slider.unseen.unseen.slice().sort((a, b) => b - a) };
-    const tEl = $("#h2-t"), kEl = $("#h2-k");
+    const tEl = $("#h2-t"), kEl = $("#h2-k"), best = $("#h2-best");
     const mode = seg("h2-data", () => draw());
-    $("#h2-best").onclick = () => { tEl.value = bestThreshold(D.cv, +kEl.value).toFixed(3); draw(); };
-    tEl.oninput = () => draw(); kEl.oninput = () => draw();
+    best.onclick = () => { tEl.value = bestThreshold(D.cv, +kEl.value).toFixed(3); draw(); };
+    tEl.oninput = draw; kEl.oninput = draw;
     document.querySelectorAll('[data-jump="unseen"]').forEach((a) => a.addEventListener("click", () => mode.set("unseen")));
+    const key = (items) => `<div class="keyrow" style="grid-column:1/-1;margin-top:0">${items.map(([cls, style, label]) =>
+      `<span class="key"><i class="${cls}" style="${style}"></i>${label}</span>`).join("")}<span>Each dot is 1% of messages.</span></div>`;
 
     function draw() {
       const t = +tEl.value, k = +kEl.value, v = mode.get();
       $("#h2-t-val").textContent = t.toFixed(3);
-      $("#h2-k-val").textContent = `${k} : 1`;
+      $("#h2-k-val").textContent = `${k}× a handoff`;
       const frozen = R.slider.frozen_thresholds.find((x) => x.k === k);
-      $("#h2-best").textContent = frozen ? `Use the frozen CV threshold for k = ${k}` : `Use the best CV threshold for k = ${k}`;
+      best.textContent = frozen ? `Use the threshold frozen from cross-validation` : `Use the best cross-validation threshold`;
       if (v === "unseen") return drawUnseen(t, k);
-      const d = D[v], s = at(d, t, k);
+      const d = D[v], s = at(d, t, k), tot = d.cumW[d.n];
       stats($("#h2-stats"), [
-        [pct(s.coverage), "answered automatically (coverage)"],
-        [isNaN(s.acc) ? "–" : pct(s.acc), "accuracy on the answered messages"],
-        [pct(1 - d.err), "accuracy if it answers everything"],
-        [s.cost.toFixed(3), `cost per message (answer all: ${s.answerAll.toFixed(3)}, hand off all: 1)`],
-        [s.randomCost.toFixed(3), "cost if the same number were handed off at random"],
+        [pct(s.cov), "answered automatically"],
+        [isNaN(s.acc) ? "–" : pct(s.acc), `accuracy on those answers (${pct(1 - d.err)} if it answered everything)`],
+        [s.cost.toFixed(3), `cost per message (answering everything: ${s.answerAll.toFixed(3)}, handing off everything: 1)`, "accent"],
+        [s.randomCost.toFixed(3), "cost if the same number were handed off at random", "warm"],
       ]);
-      // Risk-coverage curve
+      const cls = ["d-right", "d-wrong", "d-caught", "d-waste"];
+      const per100 = (x) => (100 * x).toFixed(1);
+      $("#h2-waffles").innerHTML =
+        waffle("Hand off the least confident", `${per100(s.wrong / d.n)} wrong answers reach customers per 100 messages.`,
+          [(s.m - s.wrong) / d.n, s.wrong / d.n, (tot - s.wrong) / d.n, (d.n - s.m - (tot - s.wrong)) / d.n], cls) +
+        waffle("Hand off the same number at random", `${per100(d.err * s.cov)} wrong answers reach customers per 100 messages.`,
+          [s.cov * (1 - d.err), s.cov * d.err, (1 - s.cov) * d.err, (1 - s.cov) * (1 - d.err)], cls) +
+        key([["", "background:var(--accent)", "Answered, right"], ["", "background:var(--bad)", "Answered, wrong"],
+             ["ring", "color:var(--good)", "Handed off, would have been wrong"], ["ring", "color:var(--ghost)", "Handed off, would have been right"]]);
+
+      $("#h2-title-a").textContent = "Error on answered messages";
       const pts = [];
       for (let m = Math.max(1, Math.round(0.02 * d.n)); m <= d.n; m += Math.max(1, Math.floor(d.n / 300))) pts.push({ x: m / d.n, y: d.cumW[m] / m });
       pts.push({ x: 1, y: d.err });
-      chart("h2-risk", {
-        type: "scatter",
+      chart("h2-risk", { type: "scatter",
         data: { datasets: [
-          { label: "Hand off least confident", data: pts, showLine: true, pointRadius: 0, borderColor: S(1), borderWidth: 2 },
-          { label: "Hand off at random (B2)", data: [{ x: 0.02, y: d.err }, { x: 1, y: d.err }], showLine: true, pointRadius: 0, borderColor: S(5), borderDash: [6, 4], borderWidth: 2 },
-          { label: "Current threshold", data: s.m ? [{ x: s.coverage, y: 1 - s.acc }] : [], pointRadius: 7, pointBackgroundColor: S(2), borderColor: S(2) }] },
-        options: { scales: { x: { min: 0, max: 1, title: { display: true, text: "Coverage (share answered)" }, ticks: { callback: (x) => pct(x, 0) } },
-                             y: { min: 0, title: { display: true, text: "Error rate on answered messages" }, ticks: { callback: (x) => pct(x, 0) } } },
-          plugins: { title: { display: true, text: "Risk–coverage" }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: coverage ${pct(c.raw.x)}, error ${pct(c.raw.y)}` } } } },
-      });
-      // Cost vs threshold
-      const ts = [], conf = [], rnd = [];
-      for (let x = 0; x <= 1.0001; x += 0.01) { const a = at(d, x, k); ts.push(x); conf.push({ x, y: a.cost }); rnd.push({ x, y: a.randomCost }); }
-      chart("h2-cost", {
-        type: "scatter",
+          { label: "Confidence rule", data: pts, showLine: true, pointRadius: 0, borderColor: css("--accent") },
+          { label: "Random handoff", data: [{ x: 0.02, y: d.err }, { x: 1, y: d.err }], showLine: true, pointRadius: 0, borderColor: css("--warm"), borderDash: [5, 4] },
+          { label: "Current threshold", inLegend: false, order: -1, data: s.m ? [{ x: s.cov, y: 1 - s.acc }] : [], pointRadius: 6, pointBackgroundColor: css("--text"), pointBorderColor: css("--panel"), pointBorderWidth: 2 }] },
+        options: { scales: { x: ax("Share of messages answered", { min: 0, max: 1, ticks: pctTick }), y: ax("", { min: 0, ticks: pctTick }) },
+          plugins: { tooltip: { callbacks: { title: (c) => c[0].dataset.label, label: (c) => `${pct(c.raw.x)} answered, ${pct(c.raw.y)} wrong` } } } } });
+
+      $("#h2-title-b").textContent = `Cost per message at ${k}×`;
+      const conf = [], rnd = [];
+      for (let x = 0; x <= 1.0001; x += 0.01) { const a = at(d, x, k); conf.push({ x, y: a.cost }); rnd.push({ x, y: a.randomCost }); }
+      chart("h2-cost", { type: "scatter",
         data: { datasets: [
-          { label: "Confidence rule", data: conf, showLine: true, pointRadius: 0, borderColor: S(1), borderWidth: 2 },
-          { label: "Random handoff, same coverage", data: rnd, showLine: true, pointRadius: 0, borderColor: S(5), borderDash: [6, 4], borderWidth: 2 },
-          { label: "Current threshold", data: [{ x: t, y: s.cost }], pointRadius: 7, pointBackgroundColor: S(2), borderColor: S(2) },
-          ...(frozen ? [{ label: "Frozen (chosen on CV)", data: [{ x: frozen.threshold, y: at(d, frozen.threshold, k).cost }], pointRadius: 6, pointStyle: "rectRot", pointBackgroundColor: S(3), borderColor: S(3) }] : [])] },
-        options: { scales: { x: { min: 0, max: 1, title: { display: true, text: "Threshold" } }, y: { min: 0, title: { display: true, text: `Cost per message (wrong = ${k}, handoff = 1)` } } },
-          plugins: { title: { display: true, text: "Expected cost" }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: t = ${c.raw.x.toFixed(2)}, cost ${c.raw.y.toFixed(3)}` } } } },
-      });
-      $("#h2-note").textContent = v === "test"
-        ? `Test set: ${d.n.toLocaleString()} messages, scored once by the frozen model. The thresholds were chosen on cross-validation, so the diamond is an honest out-of-sample choice.`
-        : `Cross-validation: out-of-fold predictions for all ${d.n.toLocaleString()} training messages. This is where the thresholds were chosen.`;
+          { label: "Confidence rule", data: conf, showLine: true, pointRadius: 0, borderColor: css("--accent") },
+          { label: "Random handoff", data: rnd, showLine: true, pointRadius: 0, borderColor: css("--warm"), borderDash: [5, 4] },
+          ...(frozen ? [{ label: "Frozen threshold", data: [{ x: frozen.threshold, y: at(d, frozen.threshold, k).cost }], pointRadius: 6, pointStyle: "rectRot", pointBackgroundColor: css("--good"), pointBorderColor: css("--panel"), pointBorderWidth: 2, inLegend: false }] : []),
+          { label: "Current threshold", inLegend: false, order: -1, data: [{ x: t, y: s.cost }], pointRadius: 6, pointBackgroundColor: css("--text"), pointBorderColor: css("--panel"), pointBorderWidth: 2 }] },
+        options: { scales: { x: ax("Threshold", { min: 0, max: 1 }), y: ax("", { min: 0 }) },
+          plugins: { tooltip: { callbacks: { title: (c) => c[0].dataset.label, label: (c) => `threshold ${c.raw.x.toFixed(2)}, cost ${c.raw.y.toFixed(3)}` } } } } });
+
+      $("#h2-note").innerHTML = `<b>Figure 3.</b> ` + (v === "test"
+        ? `Test set, ${d.n.toLocaleString()} messages scored once by the frozen model. The black dot is your threshold. The green diamond is the threshold frozen from cross-validation for this cost, so it is an honest out-of-sample choice.`
+        : `Cross-validation, out-of-fold predictions for all ${d.n.toLocaleString()} training messages. This is where the thresholds were chosen. The green diamond marks the frozen one.`)
+        + ` Area under the risk–coverage curve: ${f3(R.h2[v].aurc)} against ${f3(R.h2[v].aurc_random)} for random handoff.`;
     }
 
     function drawUnseen(t, k) {
-      const share = (arr) => 1 - answeredCount({ conf: arr, n: arr.length }, t) / arr.length;
+      const off = (arr) => 1 - answeredCount(arr, t) / arr.length;
+      const ou = off(U.unseen), os = off(U.seen);
       const ref = R.unseen.cv.at_cost_thresholds[String(k)];
       stats($("#h2-stats"), [
-        [pct(share(U.unseen)), "of unseen-intent messages handed off (good)"],
-        [pct(share(U.seen)), "of seen-intent messages handed off (the price)"],
-        [f3(R.unseen.cv.auroc_seen_vs_unseen), "AUROC, seen vs unseen, from confidence alone"],
-        [ref ? ref.threshold.toFixed(3) : "–", ref ? `threshold for k = ${k}, chosen on seen intents only` : "pick k = 2, 5 or 10 for the reference threshold"],
+        [pct(ou), "of unseen-intent messages handed off", "accent"],
+        [pct(os), "of seen-intent messages handed off, the price", "warm"],
+        [f3(R.unseen.cv.auroc_seen_vs_unseen), `AUROC from confidence alone (${f3(R.unseen.test.auroc_seen_vs_unseen)} on the test set)`],
+        [ref ? ref.threshold.toFixed(3) : "–", ref ? `threshold for a ${k}× cost, chosen on seen intents only` : "reference thresholds exist for 2×, 5× and 10×"],
       ]);
+      $("#h2-waffles").innerHTML =
+        waffle("Messages from the 10 unseen intents", "Every automatic answer here is wrong, because the right intent does not exist.", [ou, 1 - ou], ["d-caught", "d-miss"]) +
+        waffle("Messages from the 67 seen intents", "Handing these off is the price of catching the unseen ones.", [1 - os, os], ["d-right", "d-waste"]) +
+        key([["ring", "color:var(--good)", "Unseen, handed off"], ["", "background:var(--bad)", "Unseen, answered"],
+             ["", "background:var(--accent)", "Seen, answered"], ["ring", "color:var(--ghost)", "Seen, handed off"]]);
+
+      $("#h2-title-a").textContent = "Confidence, seen and unseen";
       const bins = 25, hist = (arr) => {
         const h = new Array(bins).fill(0);
         for (const x of arr) h[Math.min(bins - 1, Math.floor(x * bins))]++;
@@ -251,307 +306,336 @@
       };
       const hs = hist(U.seen), hu = hist(U.unseen);
       const ymax = Math.max(...hs.map((p) => p.y), ...hu.map((p) => p.y)) * 1.05;
-      chart("h2-risk", {
-        type: "bar",
+      chart("h2-risk", { type: "bar",
         data: { datasets: [
-          { type: "bar", label: "Seen intents (67)", data: hs, backgroundColor: alpha(S(1), 0.55), barPercentage: 1, categoryPercentage: 1, grouped: false },
-          { type: "bar", label: "Unseen intents (10)", data: hu, backgroundColor: alpha(S(2), 0.55), barPercentage: 1, categoryPercentage: 1, grouped: false },
-          { type: "line", label: "Threshold", data: [{ x: t, y: 0 }, { x: t, y: ymax }], borderColor: S(5), borderWidth: 2, pointRadius: 0 }] },
-        options: { scales: { x: { type: "linear", min: 0, max: 1, title: { display: true, text: "Top probability" } }, y: { stacked: false, title: { display: true, text: "Share of messages" }, ticks: { callback: (x) => pct(x, 0) } } },
-          plugins: { title: { display: true, text: "Confidence: seen vs unseen intents" } } },
-      });
+          { type: "line", label: "Threshold", inLegend: false, data: [{ x: t, y: 0 }, { x: t, y: ymax }], borderColor: css("--text"), borderWidth: 1.5, pointRadius: 0 },
+          { label: "Seen intents", data: hs, backgroundColor: alpha(css("--accent"), 0.6), barPercentage: 1, categoryPercentage: 1, grouped: false, pointStyle: "rect" },
+          { label: "Unseen intents", data: hu, backgroundColor: alpha(css("--warm"), 0.6), barPercentage: 1, categoryPercentage: 1, grouped: false, pointStyle: "rect" }] },
+        options: { scales: { x: ax("Top probability", { type: "linear", min: 0, max: 1 }), y: ax("", { max: ymax, ticks: pctTick }) },
+          plugins: { tooltip: { enabled: false } } } });
+
+      $("#h2-title-b").textContent = "Share handed off";
       const cs = [], cu = [];
-      for (let x = 0; x <= 1.0001; x += 0.01) { cs.push({ x, y: 1 - answeredCount({ conf: U.seen, n: U.seen.length }, x) / U.seen.length }); cu.push({ x, y: 1 - answeredCount({ conf: U.unseen, n: U.unseen.length }, x) / U.unseen.length }); }
-      chart("h2-cost", {
-        type: "scatter",
+      for (let x = 0; x <= 1.0001; x += 0.01) { cs.push({ x, y: off2(U.seen, x) }); cu.push({ x, y: off2(U.unseen, x) }); }
+      chart("h2-cost", { type: "scatter",
         data: { datasets: [
-          { label: "Unseen handed off", data: cu, showLine: true, pointRadius: 0, borderColor: S(2), borderWidth: 2 },
-          { label: "Seen handed off", data: cs, showLine: true, pointRadius: 0, borderColor: S(1), borderWidth: 2 },
-          { label: "Current threshold", data: [{ x: t, y: share(U.unseen) }, { x: t, y: share(U.seen) }], pointRadius: 6, pointBackgroundColor: S(5), borderColor: S(5) }] },
-        options: { scales: { x: { min: 0, max: 1, title: { display: true, text: "Threshold" } }, y: { min: 0, max: 1, title: { display: true, text: "Share handed off" }, ticks: { callback: (x) => pct(x, 0) } } },
-          plugins: { title: { display: true, text: "Handoff rate by threshold" } } },
-      });
-      $("#h2-note").textContent = `Unseen-intent mode: a model trained on 67 intents, out-of-fold confidences for ${U.seen.length.toLocaleString()} seen and ${U.unseen.length.toLocaleString()} unseen training messages. On the test set, AUROC is ${f3(R.unseen.test.auroc_seen_vs_unseen)} and the k = 5 threshold hands off ${pct(R.unseen.test.at_frozen_thresholds["5"].unseen_handed_off)} of unseen vs ${pct(R.unseen.test.at_frozen_thresholds["5"].seen_handed_off)} of seen messages.`;
+          { label: "Unseen intents", data: cu, showLine: true, pointRadius: 0, borderColor: css("--warm") },
+          { label: "Seen intents", data: cs, showLine: true, pointRadius: 0, borderColor: css("--accent") },
+          { label: "Current threshold", inLegend: false, order: -1, data: [{ x: t, y: ou }, { x: t, y: os }], pointRadius: 6, pointBackgroundColor: css("--text"), pointBorderColor: css("--panel"), pointBorderWidth: 2 }] },
+        options: { scales: { x: ax("Threshold", { min: 0, max: 1 }), y: ax("", { min: 0, max: 1, ticks: pctTick }) },
+          plugins: { tooltip: { callbacks: { title: (c) => c[0].dataset.label, label: (c) => `threshold ${c.raw.x.toFixed(2)}: ${pct(c.raw.y)} handed off` } } } } });
+      const f5 = R.unseen.test.at_frozen_thresholds["5"];
+      $("#h2-note").innerHTML = `<b>Figure 3.</b> Unseen-intent mode. A model trained on 67 intents, with out-of-fold confidences for ${U.seen.length.toLocaleString()} seen and ${U.unseen.length.toLocaleString()} unseen training messages. On the test set, the threshold for a 5× cost hands off ${pct(f5.unseen_handed_off)} of unseen messages and ${pct(f5.seen_handed_off)} of seen ones.`;
     }
-    renderers.push(draw);
+    const off2 = (arr, x) => 1 - answeredCount(arr, x) / arr.length;
+    redraw.push(draw);
     draw();
   }
 
   function renderE1() {
     const cv = R.e1.cv, te = R.e1.test;
     $("#e1-table").innerHTML = `<thead><tr><th></th><th class="n">Max probability</th><th class="n">E1</th></tr></thead><tbody>
-      <tr><td>Error-detection AUROC (CV)</td><td class="n">${f3(cv.auroc_error_detection.max_prob)}</td><td class="n">${f3(cv.auroc_error_detection.e1)}</td></tr>
-      <tr><td>Error-detection AUROC (test)</td><td class="n">${f3(te.auroc.max_prob)}</td><td class="n">${f3(te.auroc.e1)}</td></tr>
-      <tr><td>AURC, lower is better (CV)</td><td class="n">${cv.aurc.max_prob.toFixed(4)}</td><td class="n">${cv.aurc.e1.toFixed(4)}</td></tr>
-      <tr><td>AURC (test)</td><td class="n">${te.aurc.max_prob.toFixed(4)}</td><td class="n">${te.aurc.e1.toFixed(4)}</td></tr>
-      <tr><td>Gain in AUROC, 95% CI (CV)</td><td class="n" colspan="2">${f3(cv.e1_minus_max_prob.auroc_diff)} ${ci(cv.e1_minus_max_prob.auroc_diff_ci95)}</td></tr></tbody>`;
+      <tr><td>Error-detection AUROC, cross-validation</td><td class="n">${f3(cv.auroc_error_detection.max_prob)}</td><td class="n"><b>${f3(cv.auroc_error_detection.e1)}</b></td></tr>
+      <tr><td>Error-detection AUROC, test set</td><td class="n">${f3(te.auroc.max_prob)}</td><td class="n"><b>${f3(te.auroc.e1)}</b></td></tr>
+      <tr><td>Gain in AUROC, 95% interval</td><td class="n" colspan="2">+${f3(cv.e1_minus_max_prob.auroc_diff)} (${ci(cv.e1_minus_max_prob.auroc_diff_ci95)})</td></tr></tbody>`;
   }
 
-  // ---------- 8. H3 reliability ----------
+  // ---------- Figure 4: H3 reliability ----------
 
   function initH3() {
-    const sel = $("#h3-model");
     const ids = Object.keys(R.h3.cv);
-    sel.innerHTML = ids.map((id) => `<option value="${id}">${esc(R.h3.cv[id].name)}</option>`).join("");
+    let sel = "M1_L2";
     const mode = seg("h3-data", () => draw());
-    sel.onchange = () => draw();
+    $("#h3-picker").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (b) { sel = b.dataset.id; draw(); }
+    });
     function draw() {
-      const src = R.h3[mode.get()], m = src[sel.value];
+      const src = R.h3[mode.get()], m = src[sel];
       const maxN = Math.max(...m.bins.map((b) => b.n));
-      chart("h3-chart", {
-        type: "scatter",
+      const ghosts = ids.filter((id) => id !== sel).map((id) => ({ label: src[id].name, inLegend: false, data: src[id].bins.map((b) => ({ x: b.conf, y: b.acc })),
+        showLine: true, pointRadius: 0, pointHitRadius: 0, borderColor: css("--ghost"), borderWidth: 1 }));
+      chart("h3-chart", { type: "scatter",
         data: { datasets: [
-          { label: "Perfect calibration", data: [{ x: 0, y: 0 }, { x: 1, y: 1 }], showLine: true, pointRadius: 0, borderColor: S(6), borderDash: [5, 4], borderWidth: 1.5 },
-          { label: m.name, data: m.bins.map((b) => ({ x: b.conf, y: b.acc, n: b.n })), showLine: true, borderColor: S(1), backgroundColor: alpha(S(1), 0.7),
-            pointRadius: m.bins.map((b) => 3 + 9 * Math.sqrt(b.n / maxN)) }] },
-        options: { scales: { x: { min: 0, max: 1, title: { display: true, text: "Mean confidence in bin" } }, y: { min: 0, max: 1, title: { display: true, text: "Accuracy in bin" } } },
-          plugins: { title: { display: true, text: "Reliability diagram (dot size = messages in bin)" },
-            tooltip: { callbacks: { label: (c) => c.raw.n ? `confidence ${f3(c.raw.x)}, accuracy ${f3(c.raw.y)}, ${c.raw.n} messages` : "" } } } },
-      });
+          { label: m.name, data: m.bins.map((b) => ({ x: b.conf, y: b.acc, n: b.n })), showLine: true, borderColor: css("--accent"), backgroundColor: css("--accent"),
+            pointRadius: m.bins.map((b) => 2.5 + 8 * Math.sqrt(b.n / maxN)), pointBorderColor: css("--panel"), pointBorderWidth: 1.5 },
+          { label: "Perfect calibration", data: [{ x: 0, y: 0 }, { x: 1, y: 1 }], showLine: true, pointRadius: 0, pointHitRadius: 0, borderColor: css("--muted"), borderDash: [4, 4], borderWidth: 1.2 },
+          ...ghosts] },
+        options: { scales: { x: ax("Confidence", { min: 0, max: 1, ticks: pctTick }), y: ax("Accuracy", { min: 0, max: 1, ticks: pctTick }) },
+          plugins: { tooltip: { filter: (c) => c.datasetIndex === 0, callbacks: { title: () => m.name, label: (c) => `says ${pct(c.raw.x, 0)}, right ${pct(c.raw.y, 0)} of the time (${c.raw.n} messages)` } } } } });
+      const gap = m.accuracy - m.mean_confidence;
       stats($("#h3-stats"), [
-        [f3(m.ece), `ECE, 95% CI ${ci(m.ece_ci)}`],
-        [pct(m.mean_confidence), "average confidence"],
-        [pct(m.accuracy), "actual accuracy"],
-        [m.mean_confidence < m.accuracy ? "Under" : "Over", "confident overall"],
+        [f3(m.ece), `calibration error (ECE), 95% interval ${ci(m.ece_ci)}`, "accent"],
+        [`${pct(m.mean_confidence, 0)} → ${pct(m.accuracy, 0)}`, `says, then is right: ${gap >= 0 ? "underconfident" : "overconfident"} by ${Math.abs(100 * gap).toFixed(0)} points`],
       ]);
       const order = ids.slice().sort((a, b) => src[b].macro_f1 - src[a].macro_f1);
       const bestEce = ids.reduce((a, b) => (src[a].ece <= src[b].ece ? a : b));
-      $("#h3-table").innerHTML = `<thead><tr><th>Model (by macro-F1)</th><th class="n">Macro-F1</th><th class="n">ECE</th></tr></thead><tbody>` +
-        order.map((id, i) => `<tr class="${id === sel.value ? "hl" : ""}"><td>${esc(src[id].name)}${i === 0 ? " · most accurate" : ""}${id === bestEce ? " · best calibrated" : ""}</td>
-          <td class="n">${f3(src[id].macro_f1)}</td><td class="n">${f3(src[id].ece)}</td></tr>`).join("") + "</tbody>";
+      $("#h3-picker").innerHTML = `<div class="prow h"><span>Model</span><span>Macro-F1</span><span>ECE</span></div>` +
+        order.map((id, i) => `<button class="prow ${id === sel ? "on" : ""}" data-id="${id}" aria-pressed="${id === sel}">
+          <span>${esc(src[id].name)}${i === 0 ? " <small>· most accurate</small>" : ""}${id === bestEce ? " <small>· best calibrated</small>" : ""}</span>
+          <span>${f3(src[id].macro_f1)}</span><span>${f3(src[id].ece)}</span></button>`).join("");
     }
-    renderers.push(draw);
+    redraw.push(draw);
     draw();
   }
 
-  // ---------- 9. H4 ----------
+  // ---------- Figure 5: H4 ----------
 
   function initH4() {
+    const N_FEATURES = 37106;   // size of the full word + char TF-IDF vocabulary (docs/assets/model.json)
     const mode = seg("h4-data", () => draw());
+    const dEl = $("#h4-d");
+    dEl.oninput = draw;
     function draw() {
-      const v = mode.get(), curve = R.h4[v], full = R.h4[v + "_full"];
-      chart("h4-chart", {
-        type: "scatter",
-        data: { datasets: [
-          { label: "SVD + logistic regression", data: curve.map((c) => ({ x: c.d, y: c.share, f1: c.macro_f1, ev: c.explained_variance })), showLine: true, borderColor: S(1), backgroundColor: S(1), pointRadius: 5 },
-          { label: "90% of full TF-IDF (pre-registered bar)", data: [{ x: 20, y: 0.9 }, { x: 1200, y: 0.9 }], showLine: true, pointRadius: 0, borderColor: S(5), borderDash: [6, 4], borderWidth: 1.5 },
-          { label: "d = 300 limit", data: [{ x: 300, y: 0.75 }, { x: 300, y: 1.0 }], showLine: true, pointRadius: 0, borderColor: S(6), borderDash: [2, 3], borderWidth: 1.5 }] },
-        options: { scales: { x: { type: "logarithmic", min: 20, max: 1200, title: { display: true, text: "SVD dimensions d (log scale)" }, ticks: { callback: (x) => ([25, 50, 100, 200, 300, 500, 1000].includes(x) ? x : "") } },
-                             y: { min: 0.75, max: 1.0, title: { display: true, text: `Share of full TF-IDF macro-F1 (${f3(full)})` }, ticks: { callback: (x) => pct(x, 0) } } },
-          plugins: { tooltip: { callbacks: { label: (c) => c.datasetIndex === 0 ? `d = ${c.raw.x}: macro-F1 ${f3(c.raw.f1)} (${pct(c.raw.y)} of full)${c.raw.ev ? `, explains ${pct(c.raw.ev, 0)} of variance` : ""}` : c.dataset.label } } } },
-      });
+      const v = mode.get(), curve = R.h4[v], full = R.h4[v + "_full"], i = +dEl.value, c = curve[i];
+      $("#h4-d-val").textContent = c.d;
+      const ev = R.h4.cv[i].explained_variance;
+      stats($("#h4-stats"), [
+        [pct(c.share), `of the full model's macro-F1 (${f3(c.macro_f1)} of ${f3(full)})`, "accent"],
+        [pct(ev, 0), "of the TF-IDF variance explained", "warm"],
+        [`${Math.round(N_FEATURES / c.d).toLocaleString()}×`, `fewer features: ${c.d} instead of about 37,000`],
+        [c.share >= 0.9 && c.d <= 300 ? "Passes" : c.d > 300 ? "Above 300" : "Below 90%", "against the pre-registered bar"],
+      ]);
+      const ds = [
+        { label: "Macro-F1 kept", data: curve.map((p) => ({ x: p.d, y: p.share })), showLine: true, borderColor: css("--accent"), backgroundColor: css("--accent"),
+          pointRadius: curve.map((_, j) => (j === i ? 7 : 3.5)), pointBorderColor: css("--panel"), pointBorderWidth: 1.5 },
+        { label: "90% bar", data: [{ x: 20, y: 0.9 }, { x: 1200, y: 0.9 }], showLine: true, pointRadius: 0, pointHitRadius: 0, borderColor: css("--muted"), borderDash: [4, 4], borderWidth: 1.2 }];
+      if (v === "cv") ds.push({ label: "Variance explained", data: R.h4.cv.map((p) => ({ x: p.d, y: p.explained_variance })), showLine: true, borderColor: css("--warm"), backgroundColor: css("--warm"),
+        borderDash: [2, 3], pointRadius: curve.map((_, j) => (j === i ? 6 : 2.5)), pointBorderColor: css("--panel"), pointBorderWidth: 1.5 });
+      chart("h4-chart", { type: "scatter", data: { datasets: ds },
+        options: { scales: { x: ax("SVD dimensions (log scale)", { type: "logarithmic", min: 20, max: 1200, ticks: { maxTicksLimit: 20, callback: (x) => ([25, 50, 100, 200, 300, 500, 1000].includes(x) ? x : "") } }),
+                             y: ax("", { min: 0, max: 1, ticks: pctTick }) },
+          plugins: { tooltip: { filter: (c) => c.dataset.label !== "90% bar", callbacks: { title: (c) => `${c[0].raw.x} dimensions`, label: (c) => `${c.dataset.label}: ${pct(c.raw.y)}` } } } } });
     }
-    renderers.push(draw);
+    redraw.push(draw);
     draw();
   }
 
-  // ---------- 10. H1 ----------
+  // ---------- Figure 6: H1 ----------
 
   function initH1() {
-    const order = R.h1.confusion.order, groups = R.h1.groups;
+    const names = R.h1.confusion.order, K = names.length;
     const mode = seg("h1-data", () => draw());
-    const mergeEl = $("#h1-merge");
-    mergeEl.onchange = () => draw();
-    const gIndex = new Map();
-    groups.forEach((g, gi) => g.forEach((c) => gIndex.set(c, gi)));
+    const mergeEl = $("#h1-merge"), edgeEl = $("#h1-edge");
+    mergeEl.onchange = draw; edgeEl.oninput = draw;
+    const canvas = $("#h1-matrix"), tip = $("#h1-tip");
+    let view = null, hover = null;
 
-    function merged(M) {
-      const labels = [], map = order.map((c) => {
-        const key = gIndex.has(c) ? `G${gIndex.get(c)}` : c;
-        let i = labels.indexOf(key);
-        if (i < 0) { labels.push(key); i = labels.length - 1; }
-        return i;
-      });
-      const K = labels.length, out = Array.from({ length: K }, () => new Array(K).fill(0));
-      M.forEach((row, i) => row.forEach((v, j) => { out[map[i]][map[j]] += v; }));
-      return { labels, M: out };
+    // Connected components of "confused at least t times in total", from cross-validation errors.
+    // Same rule as src/h1.py confusable_groups.
+    function groupsAt(t) {
+      const M = R.h1.confusion.cv, parent = names.map((_, i) => i);
+      const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+      for (let i = 0; i < K; i++) for (let j = i + 1; j < K; j++) if (M[i][j] + M[j][i] >= t) parent[find(i)] = find(j);
+      const comp = new Map();
+      for (let i = 0; i < K; i++) { const r = find(i); if (!comp.has(r)) comp.set(r, []); comp.get(r).push(i); }
+      return [...comp.values()].filter((g) => g.length >= 2)
+        .map((g) => g.sort((a, b) => names[a].localeCompare(names[b])))
+        .sort((a, b) => b.length - a.length || names[a[0]].localeCompare(names[b[0]]));
     }
     function metrics(M) {
-      const K = M.length;
+      const n = M.length, col = new Array(n).fill(0);
       let total = 0, diag = 0, f1 = 0;
-      const colSum = new Array(K).fill(0);
-      M.forEach((row) => row.forEach((v, j) => { colSum[j] += v; total += v; }));
-      for (let i = 0; i < K; i++) {
-        const tp = M[i][i], rowSum = M[i].reduce((a, b) => a + b, 0);
+      M.forEach((row) => row.forEach((v, j) => { col[j] += v; total += v; }));
+      for (let i = 0; i < n; i++) {
+        const tp = M[i][i], rs = M[i].reduce((a, b) => a + b, 0);
         diag += tp;
-        const p = colSum[i] ? tp / colSum[i] : 0, r = rowSum ? tp / rowSum : 0;
+        const p = col[i] ? tp / col[i] : 0, r = rs ? tp / rs : 0;
         f1 += p + r ? (2 * p * r) / (p + r) : 0;
       }
-      return { acc: diag / total, macroF1: f1 / K, errors: total - diag, K };
-    }
-
-    const canvas = $("#h1-matrix");
-    let hover = null, current = null;
-    canvas.addEventListener("mousemove", (e) => {
-      if (!current) return;
-      const rect = canvas.getBoundingClientRect(), K = current.labels.length;
-      const size = Math.min(rect.width, rect.height), cell = size / K;
-      const j = Math.floor((e.clientX - rect.left) / cell), i = Math.floor((e.clientY - rect.top) / cell);
-      hover = i >= 0 && j >= 0 && i < K && j < K ? { i, j } : null;
-      paint();
-    });
-    canvas.addEventListener("mouseleave", () => { hover = null; paint(); });
-
-    const name = (key) => key.startsWith("G") && /^G\d+$/.test(key) ? `group ${+key.slice(1) + 1} (${groups[+key.slice(1)].length} intents)` : key;
-
-    function paint() {
-      const { labels, M, groupSpans } = current;
-      const rect = canvas.parentElement.getBoundingClientRect();
-      const size = Math.min(rect.width, rect.height), dpr = window.devicePixelRatio || 1;
-      canvas.style.width = size + "px"; canvas.style.height = size + "px";
-      canvas.width = size * dpr; canvas.height = size * dpr;
-      const ctx = canvas.getContext("2d");
-      ctx.scale(dpr, dpr);
-      const K = labels.length, cell = size / K;
-      ctx.fillStyle = css("--surface-2"); ctx.fillRect(0, 0, size, size);
-      let max = 1;
-      M.forEach((row, i) => row.forEach((v, j) => { if (i !== j) max = Math.max(max, v); }));
-      const ink = css("--accent");
-      M.forEach((row, i) => row.forEach((v, j) => {
-        if (i === j || !v) return;
-        ctx.fillStyle = alpha(ink, 0.15 + 0.85 * Math.log1p(v) / Math.log1p(max));
-        ctx.fillRect(j * cell, i * cell, Math.max(cell, 1), Math.max(cell, 1));
-      }));
-      ctx.strokeStyle = css("--warn"); ctx.lineWidth = 1.2;
-      for (const [a, b] of groupSpans) ctx.strokeRect(a * cell, a * cell, (b - a) * cell, (b - a) * cell);
-      if (hover) {
-        const { i, j } = hover;
-        ctx.strokeStyle = css("--text"); ctx.lineWidth = 1.5; ctx.strokeRect(j * cell, i * cell, cell, cell);
-        const v = M[i][j];
-        const txt = i === j ? `${name(labels[i])}: ${v} correct` : `${v} × true ${name(labels[i])} → predicted ${name(labels[j])}`;
-        ctx.font = `12px ${css("--sans")}`;
-        const w = Math.min(size - 8, ctx.measureText(txt).width + 12);
-        const x = Math.min(size - w - 4, Math.max(4, j * cell - w / 2)), y = i * cell > 40 ? i * cell - 30 : i * cell + cell + 6;
-        ctx.fillStyle = css("--surface"); ctx.strokeStyle = css("--border"); ctx.lineWidth = 1;
-        ctx.fillRect(x, y, w, 24); ctx.strokeRect(x, y, w, 24);
-        ctx.fillStyle = css("--text"); ctx.fillText(txt, x + 6, y + 16, w - 12);
-      }
+      return { acc: diag / total, f1: f1 / n, errors: total - diag, n };
     }
 
     function draw() {
-      const v = mode.get(), M = R.h1.confusion[v], isMerged = mergeEl.checked;
+      const t = +edgeEl.value, v = mode.get(), M = R.h1.confusion[v], merged = mergeEl.checked;
+      $("#h1-edge-val").textContent = `${t} times${t === 5 ? " (pre-registered)" : ""}`;
+      const groups = groupsAt(t);
+      const gOf = new Array(K).fill(-1);
+      groups.forEach((g, gi) => g.forEach((i) => (gOf[i] = gi)));
+      const rest = names.map((_, i) => i).filter((i) => gOf[i] < 0).sort((a, b) => names[a].localeCompare(names[b]));
+      const perm = groups.flat().concat(rest);
+
+      // (a) share of errors inside groups, and what chance alone would give (src/h1.py chance_share)
+      let errors = 0, inside = 0, chance = 0;
+      const perGroup = groups.map(() => 0);
+      for (let i = 0; i < K; i++) for (let j = 0; j < K; j++) {
+        if (i === j || !M[i][j]) continue;
+        errors += M[i][j];
+        if (gOf[i] >= 0) {
+          chance += (M[i][j] * (groups[gOf[i]].length - 1)) / (K - 1);
+          if (gOf[i] === gOf[j]) { inside += M[i][j]; perGroup[gOf[i]] += M[i][j]; }
+        }
+      }
       const base = metrics(M);
-      if (isMerged) {
-        const m = merged(M);
-        let pos = 0;
-        current = { labels: m.labels, M: m.M, groupSpans: [] };
-        const after = metrics(m.M);
-        stats($("#h1-stats"), [
-          [`${pct(base.acc)} → ${pct(after.acc)}`, "accuracy after merging"],
-          [`${f3(base.macroF1)} → ${f3(after.macroF1)}`, "macro-F1 after merging"],
-          [`${base.errors} → ${after.errors}`, "errors left"],
-          [`77 → ${after.K}`, "labels"],
-        ]);
+      // merged matrix: one label per group
+      const label = perm.map((i) => (gOf[i] >= 0 ? gOf[i] : groups.length + rest.indexOf(i)));
+      const nL = groups.length + rest.length;
+      const MM = Array.from({ length: nL }, () => new Array(nL).fill(0));
+      perm.forEach((i, a) => perm.forEach((j, b) => { MM[label[a]][label[b]] += M[i][j]; }));
+      const after = metrics(MM);
+
+      const share = errors ? inside / errors : 0, ch = errors ? chance / errors : 0;
+      stats($("#h1-stats"), [
+        [pct(share), `of ${errors} errors fall inside a group`, "accent"],
+        [pct(ch), `expected if errors were random${ch > 0 ? `, so ${(share / ch).toFixed(1)}× chance` : ""}`, "warm"],
+        [`${groups.length}`, groups.length ? `groups, the largest with ${groups[0].length} intents` : "groups"],
+        merged ? [`${pct(base.acc)} → ${pct(after.acc)}`, `accuracy after merging 77 labels into ${after.n} (macro-F1 ${f3(base.f1)} → ${f3(after.f1)}, errors ${base.errors} → ${after.errors})`]
+               : [pct(base.acc), `accuracy on 77 intents (macro-F1 ${f3(base.f1)}, top-3 accuracy ${pct(v === "cv" ? R.h1.top3_cv : R.h1.test.top3_accuracy)})`],
+      ]);
+
+      if (merged) {
+        view = { M: MM, n: nL, spans: [], name: (a) => (a < groups.length ? `group ${a + 1} (${groups[a].length} intents)` : names[rest[a - groups.length]]) };
       } else {
+        const P = perm.map((i) => perm.map((j) => M[i][j]));
         const spans = [];
         let pos = 0;
         for (const g of groups) { spans.push([pos, pos + g.length]); pos += g.length; }
-        current = { labels: order, M, groupSpans: spans };
-        let inside = 0;
-        M.forEach((row, i) => row.forEach((x, j) => { if (i !== j && gIndex.has(order[i]) && gIndex.get(order[i]) === gIndex.get(order[j])) inside += x; }));
-        stats($("#h1-stats"), [
-          [pct(base.acc), "accuracy, 77 intents"],
-          [f3(base.macroF1), "macro-F1"],
-          [`${pct(inside / base.errors)}`, `of ${base.errors} errors fall inside a group (chance: ${pct(R.h1.edge["5"].chance_share)} in CV)`],
-          [pct(v === "cv" ? R.h1.top3_cv : R.h1.test.top3_accuracy), "top-3 accuracy"],
-        ]);
+        view = { M: P, n: K, spans, name: (a) => names[perm[a]] };
       }
       paint();
-      // group list with error counts
-      const pos = new Map(order.map((c, i) => [c, i]));
-      $("#h1-groups").innerHTML = groups.map((g, gi) => {
-        let n = 0;
-        for (const a of g) for (const b of g) if (a !== b) n += M[pos.get(a)][pos.get(b)];
-        return `<div class="group ${isMerged ? "merged" : ""}"><div class="head">Group ${gi + 1} · ${g.length} intents · ${n} errors inside${isMerged ? " → now correct" : ""}</div>
-          ${g.map((c) => `<span class="pill">${esc(c)}</span>`).join("")}</div>`;
-      }).join("");
+      $("#h1-groups").innerHTML = groups.length ? groups.map((g, gi) => `<div class="group ${merged ? "merged" : ""}">
+        <div class="head"><b>Group ${gi + 1}</b> · ${g.length} intents · ${perGroup[gi]} errors inside${merged ? ", now counted as right" : ""}</div>
+        ${g.map((i) => `<span class="pill">${esc(names[i])}</span>`).join("")}</div>`).join("") : `<p class="muted small">No pair of intents is confused this often.</p>`;
     }
-    window.addEventListener("resize", () => current && paint());
-    renderers.push(draw);
-    draw();
 
-    // (a) edge-threshold table
-    const e = R.h1.edge;
-    $("#h1-edge").innerHTML = `<thead><tr><th class="n">Edge ≥</th><th class="n">Errors inside groups</th><th class="n">If random</th><th>Group sizes</th></tr></thead><tbody>` +
-      ["3", "5", "8", "10"].map((k) => `<tr class="${k === "5" ? "hl" : ""}"><td class="n">${k}${k === "5" ? " (pre-reg.)" : ""}</td><td class="n">${pct(e[k].share)}</td><td class="n">${pct(e[k].chance_share)}</td>
-        <td>${e[k].group_sizes.length > 6 ? `${e[k].n_groups} groups of ${Math.min(...e[k].group_sizes)}–${Math.max(...e[k].group_sizes)}` : e[k].group_sizes.join(", ")}</td></tr>`).join("") + "</tbody>";
-  }
-
-  function renderH1Labels() {
-    const s = R.h1.hand_labels.shares;
-    const keys = ["ambiguous_label", "vague_message", "possible_mislabel", "vocabulary_gap"];
-    chart("h1-labels", {
-      type: "bar",
-      data: { labels: keys.map(pretty), datasets: [{ data: keys.map((k) => s[k]), backgroundColor: [S(1), S(2), S(4), S(6)] }] },
-      options: { indexAxis: "y", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${pct(c.raw, 0)} of ${R.h1.hand_labels.n} errors` } } },
-        scales: { x: { min: 0, max: 0.8, ticks: { callback: (x) => pct(x, 0) } } } },
+    function paint() {
+      const { M, n, spans } = view;
+      const size = canvas.parentElement.getBoundingClientRect().width, dpr = window.devicePixelRatio || 1;
+      canvas.style.height = size + "px";
+      canvas.width = Math.round(size * dpr); canvas.height = Math.round(size * dpr);
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+      const cell = size / n, ink = css("--accent");
+      ctx.fillStyle = css("--bg"); ctx.fillRect(0, 0, size, size);
+      let max = 1;
+      M.forEach((row, i) => row.forEach((x, j) => { if (i !== j) max = Math.max(max, x); }));
+      M.forEach((row, i) => row.forEach((x, j) => {
+        if (i === j || !x) return;
+        ctx.fillStyle = alpha(ink, 0.14 + 0.86 * Math.log1p(x) / Math.log1p(max));
+        ctx.fillRect(j * cell, i * cell, Math.max(cell - 0.5, 1), Math.max(cell - 0.5, 1));
+      }));
+      ctx.strokeStyle = css("--warm"); ctx.lineWidth = 1.3;
+      for (const [a, b] of spans) ctx.strokeRect(a * cell + 0.5, a * cell + 0.5, (b - a) * cell - 1, (b - a) * cell - 1);
+      if (hover) { ctx.strokeStyle = css("--text"); ctx.lineWidth = 1.5; ctx.strokeRect(hover.j * cell, hover.i * cell, cell, cell); }
+    }
+    canvas.addEventListener("mousemove", (e) => {
+      if (!view) return;
+      const rect = canvas.getBoundingClientRect(), cell = rect.width / view.n;
+      const j = Math.floor((e.clientX - rect.left) / cell), i = Math.floor((e.clientY - rect.top) / cell);
+      if (i < 0 || j < 0 || i >= view.n || j >= view.n) return;
+      hover = { i, j };
+      const x = view.M[i][j];
+      tip.innerHTML = i === j ? `<b>${esc(view.name(i))}</b><br>${x} right` : `<b>${x}</b> message${x === 1 ? "" : "s"}<br>true: ${esc(view.name(i))}<br>predicted: ${esc(view.name(j))}`;
+      tip.style.left = Math.min(rect.width - 200, Math.max(0, e.clientX - rect.left + 14)) + "px";
+      tip.style.top = e.clientY - rect.top + 16 + "px";
+      tip.classList.add("show");
+      paint();
     });
+    canvas.addEventListener("mouseleave", () => { hover = null; tip.classList.remove("show"); paint(); });
+    window.addEventListener("resize", () => view && paint());
+    redraw.push(draw);
+    draw();
   }
 
-  // ---------- 11. Unseen table ----------
+  function renderH1Evidence() {
+    const s = R.h1.hand_labels.shares;
+    const items = [["ambiguous_label", "Ambiguous label", "--accent"], ["vague_message", "Vague message", "--warm"],
+                   ["possible_mislabel", "Possible mislabel", "--muted"], ["vocabulary_gap", "Vocabulary gap", "--ghost"]];
+    $("#h1-labels").innerHTML = `<div class="stack" role="img" aria-label="Causes of 50 hand-labelled errors">${items.map(([k, , c]) => `<i style="width:${100 * s[k]}%;background:var(${c})"></i>`).join("")}</div>
+      <div class="stack-key">${items.map(([k, l, c]) => `<span><i style="background:var(${c})"></i><b>${pct(s[k], 0)}</b>${l}</span>`).join("")}</div>
+      <p class="small muted" style="margin-top:14px">Two thirds are intents whose definitions overlap. Only 6% are words the model had never seen, which is what a weak model would look like.</p>`;
+    const cm = R.h1.cross_model.top10, keyOf = (p) => `${p[0]}|${p[1]}`;
+    const knn = new Set(cm.KNN.map(keyOf)), rf = new Set(cm.RF.map(keyOf));
+    const yes = `<span class="mark">✓</span>`, no = `<span class="muted">–</span>`;
+    $("#h1-pairs").innerHTML = `<thead><tr><th>Pair confused by logistic regression</th><th class="n">Times</th><th class="n">KNN</th><th class="n">Forest</th></tr></thead><tbody>` +
+      cm.LR.map((p) => `<tr><td>${esc(pretty(p[0]))} <span class="muted">↔</span> ${esc(pretty(p[1]))}</td><td class="n">${p[2]}</td>
+        <td class="n">${knn.has(keyOf(p)) ? yes : no}</td><td class="n">${rf.has(keyOf(p)) ? yes : no}</td></tr>`).join("") +
+      `<tr><td><b>Shared with logistic regression</b></td><td></td><td class="n"><b>${R.h1.cross_model.shared_with_LR.KNN} of 10</b></td><td class="n"><b>${R.h1.cross_model.shared_with_LR.RF} of 10</b></td></tr></tbody>`;
+  }
+
+  // ---------- Figure 7: unseen intents ----------
 
   function renderUnseen() {
-    const by = R.unseen.cv.by_unseen_intent;
-    const rows = Object.entries(by).sort((a, b) => b[1].handed_off_at_k5 - a[1].handed_off_at_k5);
-    $("#unseen-table").innerHTML = `<thead><tr><th>Unseen intent</th><th class="n">Messages</th><th class="n">Mean confidence</th><th class="n">Handed off at k = 5</th><th>Most often mistaken for</th></tr></thead><tbody>` +
-      rows.map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td class="n">${v.n}</td><td class="n">${f3(v.mean_confidence)}</td><td class="n">${pct(v.handed_off_at_k5, 0)}</td>
-        <td class="small">${Object.entries(v.most_common_predictions).slice(0, 2).map(([p, n]) => `${esc(p)} (${n})`).join(", ")}</td></tr>`).join("") + "</tbody>";
+    const u = R.unseen.cv, k5 = u.at_cost_thresholds["5"];
+    stats($("#unseen-stats"), [
+      [pct(k5.unseen_handed_off), "of unseen-intent messages handed off at a 5× cost", "accent"],
+      [pct(k5.seen_handed_off), "of seen-intent messages handed off at the same threshold", "warm"],
+      [`${u.mean_confidence.unseen.toFixed(2)} vs ${u.mean_confidence.seen.toFixed(2)}`, "mean confidence, unseen against seen"],
+      [f3(u.auroc_seen_vs_unseen), `AUROC (${f3(R.unseen.test.auroc_seen_vs_unseen)} on the test set)`],
+    ]);
+    const rows = Object.entries(u.by_unseen_intent).sort((a, b) => b[1].handed_off_at_k5 - a[1].handed_off_at_k5);
+    $("#unseen-bars").innerHTML = rows.map(([name, v]) => {
+      const [mis] = Object.keys(v.most_common_predictions);
+      return `<span class="name" title="${esc(name)}">${esc(name)}<small>mistaken for ${esc(pretty(mis))}</small></span>
+        <span class="t"><i style="width:${(100 * v.handed_off_at_k5).toFixed(1)}%"></i></span><span class="p">${pct(v.handed_off_at_k5, 0)}</span>`;
+    }).join("");
   }
 
-  // ---------- 12. Learning curve ----------
+  // ---------- Figure 8: learning curve ----------
 
   function initCurve() {
     const cv = R.learning_curve.cv, te = R.learning_curve.test, el = $("#lc-f");
     const b1 = R.scores.find((s) => s.id === "B1_keyword_k20");
-    el.oninput = () => draw();
+    el.oninput = draw;
     function draw() {
       const i = +el.value, c = cv[i], t = te[i];
       $("#lc-f-val").textContent = pct(c.fraction, 0);
       stats($("#lc-stats"), [
-        [Math.round(c.n).toLocaleString(), "training messages per fold (CV)"],
-        [`${f3(c.mean)} ± ${f3(c.sd)}`, "CV macro-F1 (mean ± SD over 5 draws)"],
-        [f3(t.mean), `test macro-F1 (trained on ${Math.round(c.fraction * R.dataset.n_train).toLocaleString()} messages)`],
-        [f3(b1.cv.macro_f1), "keyword rule, trained on everything (CV)"],
+        [f3(t.mean), `test macro-F1, trained on ${Math.round(c.fraction * R.dataset.n_train).toLocaleString()} messages`, "accent"],
+        [`${f3(c.mean)} ± ${f3(c.sd)}`, `cross-validated macro-F1, about ${Math.round(c.n).toLocaleString()} messages per fold`, "warm"],
+        [f3(b1.cv.macro_f1), "keyword rule trained on everything"],
       ]);
-      chart("lc-chart", {
-        type: "scatter",
+      const big = (arr) => arr.map((_, j) => (j === i ? 7 : 3.5));
+      chart("lc-chart", { type: "scatter",
         data: { datasets: [
-          { label: "Cross-validation", data: cv.map((p) => ({ x: p.n, y: p.mean, sd: p.sd })), showLine: true, borderColor: S(2), backgroundColor: S(2), pointRadius: cv.map((_, j) => (j === i ? 8 : 4)) },
-          { label: "Test set", data: te.map((p, j) => ({ x: cv[j].fraction * R.dataset.n_train, y: p.mean })), showLine: true, borderColor: S(1), backgroundColor: S(1), pointRadius: te.map((_, j) => (j === i ? 8 : 4)) },
-          { label: "Keyword rule (all data, CV)", data: [{ x: 300, y: b1.cv.macro_f1 }, { x: 12000, y: b1.cv.macro_f1 }], showLine: true, pointRadius: 0, borderColor: S(5), borderDash: [6, 4], borderWidth: 1.5 }] },
-        options: { scales: { x: { type: "logarithmic", min: 300, max: 12000, title: { display: true, text: "Training messages (log scale)" }, ticks: { callback: (x) => ([500, 1000, 2000, 5000, 10000].includes(x) ? x.toLocaleString() : "") } },
-                             y: { min: 0.55, max: 1, title: { display: true, text: "Macro-F1" } } },
-          plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${Math.round(c.raw.x).toLocaleString()} messages, macro-F1 ${f3(c.raw.y)}${c.raw.sd ? ` ± ${f3(c.raw.sd)}` : ""}` } } } },
-      });
+          { label: "Test set", data: te.map((p, j) => ({ x: cv[j].fraction * R.dataset.n_train, y: p.mean })), showLine: true, borderColor: css("--accent"), backgroundColor: css("--accent"), pointRadius: big(te), pointBorderColor: css("--panel"), pointBorderWidth: 1.5 },
+          { label: "Cross-validation", data: cv.map((p) => ({ x: p.n, y: p.mean })), showLine: true, borderColor: css("--warm"), backgroundColor: css("--warm"), pointRadius: big(cv), pointBorderColor: css("--panel"), pointBorderWidth: 1.5 },
+          { label: "Keyword rule, all data", data: [{ x: 300, y: b1.cv.macro_f1 }, { x: 12000, y: b1.cv.macro_f1 }], showLine: true, pointRadius: 0, pointHitRadius: 0, borderColor: css("--muted"), borderDash: [4, 4], borderWidth: 1.2 }] },
+        options: { scales: { x: ax("Training messages (log scale)", { type: "logarithmic", min: 300, max: 12000, ticks: { maxTicksLimit: 20, callback: (x) => ([500, 1000, 2000, 5000, 10000].includes(x) ? x.toLocaleString() : "") } }),
+                             y: ax("Macro-F1", { min: 0.55, max: 1 }) },
+          plugins: { tooltip: { filter: (c) => c.datasetIndex < 2, callbacks: { title: (c) => c[0].dataset.label, label: (c) => `${Math.round(c.raw.x).toLocaleString()} messages: ${f3(c.raw.y)}` } } } } });
     }
-    renderers.push(draw);
+    redraw.push(draw);
     draw();
   }
 
-  // ---------- nav highlight ----------
+  // ---------- chrome ----------
 
   function initNav() {
-    const links = [...document.querySelectorAll(".nav a[href^='#']")];
+    const links = [...document.querySelectorAll("#nav a")];
     const obs = new IntersectionObserver((entries) => {
-      for (const e of entries) if (e.isIntersecting) links.forEach((a) => a.classList.toggle("active", a.getAttribute("href") === "#" + e.target.id));
-    }, { rootMargin: "-40% 0px -55% 0px" });
-    document.querySelectorAll("section[id]").forEach((s) => obs.observe(s));
+      for (const e of entries) if (e.isIntersecting) {
+        links.forEach((a) => a.classList.toggle("active", a.getAttribute("href") === "#" + e.target.id));
+        const act = links.find((a) => a.classList.contains("active"));
+        if (act) act.parentElement.scrollTo({ left: act.offsetLeft - 60, behavior: "smooth" });
+      }
+    }, { rootMargin: "-35% 0px -60% 0px" });
+    document.querySelectorAll("main section[id]").forEach((s) => obs.observe(s));
+  }
+  function initTheme() {
+    const root = document.documentElement;
+    const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const apply = () => { if (R) { theme(); redraw.forEach((f) => f()); } };
+    $("#theme").onclick = () => {
+      root.dataset.theme = isDark() ? "light" : "dark";
+      try { localStorage.setItem("theme", root.dataset.theme); } catch (e) { /* private mode: the choice just won't persist */ }
+      apply();
+    };
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", apply);
   }
 
   async function main() {
-    initNav();
+    initNav(); initTheme();
     try {
       R = await fetch("assets/results.json").then((r) => r.json());
     } catch (e) {
-      document.querySelectorAll(".chart").forEach((c) => (c.innerHTML = `<p class="muted">Could not load results.json (${esc(e)}). Open the page through a web server, not file://.</p>`));
+      $("#demo-out").innerHTML = `<p class="loading">Could not load the results (${esc(e)}). Open this page through a web server, not as a file.</p>`;
       return;
     }
     theme();
     initDemo();
-    renderScores(); renderE1(); renderH1Labels(); renderUnseen();
+    renderScores(); renderE1(); renderH1Evidence(); renderUnseen();
     initH2(); initH3(); initH4(); initH1(); initCurve();
-    renderers.push(renderScores, renderH1Labels);
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { theme(); renderers.forEach((f) => f()); });
     window.__ready = true;
   }
   main();

@@ -4,18 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Parity Check</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
-<main class="wrap">
-  <h1>Browser / Python parity check</h1>
+<main class="col" style="padding-top:60px">
+  <p class="kicker">Parity check</p>
+  <h2>Does the browser model match Python?</h2>
   <p>Runs the in-browser model on 500 training messages (raw text, normalised here in JavaScript) and compares
     its probabilities with the ones Python computed from the same int8 weights (<code>docs/assets/parity.json</code>,
     written by <code>src/export_web.py</code>). It also compares the top intent with Python's full-precision model.</p>
   <pre id="out">Running…</pre>
   <p><a href="./">Back to the study</a></p>
 </main>
-<script src="js/model.js"></script>
+<script src="js/model.js?v=3"></script>
 <script>
 (async () => {
   const out = document.getElementById("out");
